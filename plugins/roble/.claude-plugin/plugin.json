@@ -1,0 +1,8 @@
+{
+  "name": "roble",
+  "description": "Integrar los clientes de Roble (Flutter y JavaScript) en un proyecto, desde cero o migrando, con un smoke que verifica la conexión contra el servidor real.",
+  "author": {
+    "name": "Uninorte OpenLab"
+  },
+  "homepage": "https://github.com/openlabun/skills"
+}

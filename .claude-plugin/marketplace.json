@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "openlab",
+  "description": "Skills de Uninorte OpenLab para trabajar con la plataforma Roble.",
+  "owner": {
+    "name": "Uninorte OpenLab",
+    "email": "openlab@uninorte.edu.co"
+  },
+  "plugins": [
+    {
+      "name": "roble",
+      "description": "Integrar los clientes de Roble en un proyecto: el paquete roble en Flutter o roble-client en JavaScript y TypeScript. Cubre empezar desde cero y migrar desde http/fetch crudos o desde una versión anterior, y trae un smoke que verifica la conexión contra el servidor real antes de escribir código de app.",
+      "author": {
+        "name": "Uninorte OpenLab"
+      },
+      "source": "./plugins/roble",
+      "category": "development",
+      "homepage": "https://github.com/openlabun/skills"
+    }
+  ]
+}
