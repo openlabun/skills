@@ -40,6 +40,28 @@ export function normalizeType(type) {
 /** La columna que Roble añade sola; nunca se declara ni se toca. */
 const RESERVED = new Set(['_id']);
 
+/**
+ * Tablas que son de Roble, no del proyecto.
+ *
+ * `saved_queries` guarda las consultas guardadas de la consola, que la esconde
+ * de su propia lista de tablas. `user_system` es el espejo de las cuentas: una
+ * app la lee, pero su forma la manda el servicio de autenticación.
+ *
+ * Sin esto, un agente que convierta la lectura del esquema en «lo que la app
+ * necesita» propone reestructurarlas —siete pasos destructivos sobre
+ * `saved_queries` en la primera prueba contra un proyecto real—. Ninguno se
+ * aplicaría, porque son destructivos, pero ensucian el plan y llevan a
+ * conclusiones equivocadas.
+ */
+const INTERNAL_TABLES = new Set(['saved_queries', 'user_system']);
+
+export function isInternalTable(name) {
+  return INTERNAL_TABLES.has(name);
+}
+
+/** La consola tampoco la lista; leerla solo invita a tocarla. */
+const HIDDEN_TABLES = new Set(['saved_queries']);
+
 export async function readSchema(client) {
   const usage = await client.get('/usage');
   const tables = usage?.tables ?? [];
@@ -47,7 +69,7 @@ export async function readSchema(client) {
   const result = [];
   for (const table of tables) {
     const name = table.name ?? table.tableName;
-    if (!name) continue;
+    if (!name || HIDDEN_TABLES.has(name)) continue;
 
     const res = await client.get(`/columns?table=${encodeURIComponent(name)}`);
     result.push({
@@ -78,6 +100,18 @@ export function planSchema(actual, desired, memory = SIN_MEMORIA) {
   const steps = [];
 
   for (const want of desired) {
+    if (isInternalTable(want.table)) {
+      steps.push({
+        action: 'skip_table',
+        table: want.table,
+        safe: false,
+        reason:
+          `"${want.table}" es una tabla interna de Roble, no del proyecto: su forma ` +
+          'la gobierna la plataforma. Se deja fuera del plan entera.',
+      });
+      continue;
+    }
+
     const have = byTable.get(want.table);
     const columns = (want.columns ?? []).filter((c) => !RESERVED.has(c.name));
 

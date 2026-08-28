@@ -102,6 +102,7 @@ function describePlan(plan) {
     if (s.action === 'change_column_type') {
       return `CAMBIAR TIPO ${s.table}.${s.column}: ${s.from} → ${s.to}`;
     }
+    if (s.action === 'skip_table') return `OMITIDA ${s.table}`;
     return `QUITAR COLUMNA ${s.table}.${s.column}`;
   };
 

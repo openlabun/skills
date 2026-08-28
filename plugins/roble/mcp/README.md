@@ -131,6 +131,23 @@ debe sentirse deshacer una decisión.
 Guarda la forma y no los datos —ni filas ni tamaños— para que el diff de git
 no sea ruido.
 
+## Tablas que el MCP no toca
+
+`user_system` y `saved_queries` son de Roble, no del proyecto: su forma la
+gobierna la plataforma. Cualquier paso que las mencione se descarta entero, se
+pida lo que se pida.
+
+`saved_queries` además no aparece al leer el esquema, igual que la consola la
+esconde de su lista. `user_system` sí aparece, porque una app necesita saber
+que existe y qué columnas tiene para referenciar `user_id`; lo que no puede es
+reestructurarla.
+
+Sin esto, un agente que convierta la lectura del esquema en «lo que la app
+necesita» propone reestructurarlas: en la primera prueba contra un proyecto
+real salieron siete pasos destructivos sobre `saved_queries`. Ninguno se
+habría aplicado —son destructivos—, pero ensucian el plan y llevan a
+conclusiones equivocadas.
+
 ## Tipos que Roble acepta
 
 `text`, `int`, `bigint`, `smallint`, `numeric`, `real`, `double precision`,

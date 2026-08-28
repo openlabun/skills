@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeType, planSchema, applyPlan } from '../src/schema.mjs';
+import { normalizeType, planSchema, applyPlan, readSchema } from '../src/schema.mjs';
 
 const tabla = (over = {}) => ({
   table: 'tareas',
@@ -209,4 +209,27 @@ test('al crear una tabla se respeta lo obligatorio: nace vacía', () => {
   const cols = new Map(plan.safe[0].columns.map((c) => [c.name, c.nullable]));
   assert.equal(cols.get('evaluacion_id'), false);
   assert.equal(cols.get('observacion'), true);
+});
+
+test('las tablas internas de Roble se dejan fuera del plan enteras', () => {
+  const plan = planSchema(
+    [{ table: 'user_system', rowsEstimated: 3, columns: [{ name: 'email', type: 'text' }] }],
+    [{ table: 'user_system', columns: [{ name: 'email', type: 'int' }] }],
+  );
+
+  // Ni un cambio de tipo ni nada: no es del proyecto.
+  assert.equal(plan.safe.length, 0);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0].action, 'skip_table');
+});
+
+test('saved_queries ni siquiera aparece al leer el esquema', async () => {
+  const client = {
+    get: async (path) =>
+      path === '/usage'
+        ? { tables: [{ name: 'saved_queries' }, { name: 'tareas' }] }
+        : { columns: [{ name: '_id', type: 'uuid', is_nullable: 'NO', is_primary: true }] },
+  };
+  const schema = await readSchema(client);
+  assert.deepEqual(schema.map((t) => t.table), ['tareas']);
 });
