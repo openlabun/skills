@@ -59,27 +59,40 @@ const TOOLS = [
     description:
       'Lee el esquema del proyecto: tablas, columnas, tipos y filas estimadas. ' +
       'Empieza siempre por aquí, antes de proponer cambios. ' +
-      'Nota: "user_system" aparece pero es de la plataforma y no se puede ' +
-      'modificar; para que una app lea usuarios, usa roble_queries_*.',
+      'Dos cosas al leerlo: "user_system" aparece pero es de la plataforma y no ' +
+      'se puede modificar, y esta API no hace joins — para cualquier lectura ' +
+      'que cruce tablas o agregue, usa roble_query_create en vez de resolverlo ' +
+      'en la app.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'roble_queries_list',
     description:
       'Lista las consultas guardadas del proyecto, con su SQL y si están activas. ' +
-      'Son el camino por el que una app lee lo que su rol no puede leer directo: ' +
-      'el dueño guarda una consulta con los filtros que quiere publicar y la app ' +
-      'la llama por nombre. Míralas antes de crear una: puede que ya exista.',
+      'Míralas antes de escribir lógica de lectura en la app: puede que la ' +
+      'consulta que hace falta ya exista, y también antes de crear una nueva.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'roble_query_create',
     description:
-      'Crea una consulta guardada. Es la forma correcta de exponer una lista de ' +
-      'usuarios: "user_system" no se abre a las apps porque daría a cualquier ' +
-      'usuario los datos de todos, así que se publica solo lo que una consulta ' +
-      'con filtros deje pasar. El servidor exige que sea de solo lectura, al ' +
-      'guardarla y cada vez que se ejecuta. Requiere token de escritura.',
+      'Crea una consulta guardada, y es la opción por defecto para cualquier ' +
+      'lectura que no sea "dame las filas de una tabla". ' +
+      'PREFIÉRELA cuando la app necesite: cruzar dos o más tablas, agregar ' +
+      '(COUNT, SUM, AVG, GROUP BY), ordenar o filtrar por algo que no sea ' +
+      'igualdad simple, o paginar un resultado calculado. ' +
+      'La API de lectura de Roble no hace joins, así que la alternativa es ' +
+      'traerse cada tabla entera y cruzarlas en Dart o JavaScript: N+1 viajes, ' +
+      'más código en la app y más datos por la red. Una consulta guardada lo ' +
+      'resuelve en un viaje y dentro de Postgres. ' +
+      'ADMITE PARÁMETROS: escribe $1, $2… en el SQL y la app los pasa como ' +
+      'array, así que una sola consulta sirve para todos los casos que solo ' +
+      'cambien en un valor. No crees una por cada id. ' +
+      'Es además la forma correcta de exponer una lista de usuarios: ' +
+      '"user_system" no se abre a las apps porque daría a cualquier usuario los ' +
+      'datos de todos, y una consulta publica solo lo que sus filtros dejen pasar. ' +
+      'El servidor exige que sea de solo lectura, al guardarla y en cada ' +
+      'ejecución. Requiere token de escritura.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -93,9 +106,10 @@ const TOOLS = [
         query: {
           type: 'string',
           description:
-            'SELECT con los filtros y las columnas que se quieran publicar. ' +
-            'Los parámetros van como $1, $2… y se pasan como array al ejecutar; ' +
-            'no concatenes valores dentro del SQL.',
+            'SELECT con las columnas que se quieran publicar. Nombra las ' +
+            'columnas en vez de usar SELECT *: publicar de más es el error ' +
+            'caro aquí. Los parámetros van como $1, $2… y se pasan como array ' +
+            'al ejecutar; no concatenes valores dentro del SQL.',
         },
       },
       required: ['name', 'query'],
@@ -223,7 +237,7 @@ async function callTool(name, args) {
       content: [
         {
           type: 'text',
-          text: `Consulta "${args.name}" guardada.\n\n${callHint(args.name.trim())}`,
+          text: `Consulta "${args.name}" guardada.\n\n${callHint(args.name.trim(), args.query)}`,
         },
       ],
     };

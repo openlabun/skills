@@ -131,12 +131,41 @@ debe sentirse deshacer una decisión.
 Guarda la forma y no los datos —ni filas ni tamaños— para que el diff de git
 no sea ruido.
 
-## La lista de usuarios: por consulta guardada
+## Consultas guardadas: la opción por defecto para leer
+
+**La API de lectura de Roble no hace joins.** Sin consultas guardadas, «los
+estudiantes de este curso con su promedio» se convierte en traerse tres tablas
+enteras y cruzarlas en Dart o JavaScript: N+1 viajes, más código en la app y
+más datos por la red que los que se van a usar.
+
+El MCP prefiere una consulta guardada siempre que la lectura sea algo más que
+«dame las filas de esta tabla»: cruces, agregados (`COUNT`, `SUM`, `GROUP BY`),
+orden o filtros que no sean igualdad simple, y paginación de un resultado
+calculado.
+
+**Admiten parámetros**, y ahí está la mitad del valor: `$1`, `$2`… en el SQL y
+un array en la llamada. Una sola consulta sirve para todos los casos que solo
+cambien en un valor — no hace falta una por cada id.
+
+```
+roble_query_create {
+  name: "promedio_por_curso",
+  query: "SELECT e.nombre, AVG(n.valor) AS promedio
+            FROM notas n
+            JOIN estudiantes e ON e._id = n.estudiante_id
+           WHERE n.curso_id = $1 AND n.periodo = $2
+           GROUP BY e.nombre"
+}
+```
+
+Al crearla, el MCP responde con la llamada ya dimensionada a sus parámetros,
+para que quien escriba la app no tenga que contarlos.
+
+### El caso de los usuarios
 
 `user_system` no se abre a las apps a propósito: daría a cualquier usuario los
-datos de todos. El camino es que el dueño del proyecto guarde una consulta con
-los filtros y las columnas que sí quiere publicar, y la app la llame por
-nombre.
+datos de todos. El camino es el mismo — el dueño guarda una consulta con los
+filtros y las columnas que sí quiere publicar, y la app la llama por nombre.
 
 | Herramienta | Qué hace |
 |---|---|
@@ -155,15 +184,15 @@ roble_query_create {
 }
 ```
 
-Desde la app, siempre por nombre —el id cambia si se recrea, el nombre lo
-elige el dueño—:
+Desde la app, siempre por nombre —el id cambia si la consulta se recrea, el
+nombre lo elige el dueño—:
 
 ```js
 const usuarios = await db.executeQueryByName('usuarios_publicos', []);
 ```
 
-Los parámetros van como `$1`, `$2`… en el SQL y como array en la llamada.
-Nunca concatenes valores dentro del SQL.
+Nunca concatenes valores dentro del SQL, ni siquiera en una consulta que hoy
+no lleva parámetros: es justo donde más tienta hacerlo.
 
 > **`SELECT *` sobre `user_system` no filtra nada.** Devuelve `user_id`,
 > `extra` y `metadata` —lo que el servidor guarda sobre el proveedor de login

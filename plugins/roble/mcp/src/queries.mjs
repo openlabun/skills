@@ -42,22 +42,56 @@ export async function createQuery(client, { name, description, query }) {
 }
 
 /**
+ * Cuántos parámetros distintos usa la consulta.
+ *
+ * Se cuentan los `$N` para poder mostrar la llamada con su aridad real: un
+ * ejemplo con `[]` cuando la consulta pide dos parámetros invita a llamarla
+ * mal, y el error sale en tiempo de ejecución.
+ */
+export function paramCount(query) {
+  const encontrados = new Set(
+    [...String(query ?? '').matchAll(/\$(\d+)/g)].map((m) => Number(m[1])),
+  );
+  return encontrados.size === 0 ? 0 : Math.max(...encontrados);
+}
+
+/**
  * Cómo se llama desde la app, para poder decírselo a quien la escribe.
  *
  * Se ejecuta **por nombre** y no por id: el id cambia si la consulta se
  * recrea, el nombre lo elige el dueño y se mantiene.
  */
-export function callHint(name) {
-  return [
-    'Desde la app:',
+export function callHint(name, query = '') {
+  const n = paramCount(query);
+  const args = Array.from({ length: n }, (_, i) => `valor${i + 1}`);
+  const lista = `[${args.join(', ')}]`;
+
+  const lines = [
+    'Desde la app, por nombre:',
     '',
-    `  // JavaScript / TypeScript (roble-client)`,
-    `  const usuarios = await db.executeQueryByName('${name}', []);`,
+    '  // JavaScript / TypeScript (roble-client)',
+    `  const filas = await db.executeQueryByName('${name}', ${lista});`,
     '',
-    `  // Flutter (roble)`,
-    `  final usuarios = await db.executeQueryByName('${name}', []);`,
-    '',
-    'Los parámetros van como $1, $2… en el SQL y como array en la llamada.',
-    'Nunca concatenes valores dentro del SQL: para eso están.',
-  ].join('\n');
+    '  // Flutter (roble)',
+    `  final filas = await db.executeQueryByName('${name}', ${lista});`,
+  ];
+
+  if (n > 0) {
+    lines.push(
+      '',
+      `Pide ${n} parámetro${n > 1 ? 's' : ''}, en el orden de $1..$${n}. Van en el ` +
+        'array, nunca concatenados dentro del SQL: es lo que evita la inyección ' +
+        'y lo que deja que el plan de la consulta se reutilice.',
+    );
+  } else {
+    lines.push(
+      '',
+      'No lleva parámetros. Si la app va a filtrar por algo que cambia —un id, ' +
+        'una fecha, un rango—, rehazla con $1, $2… antes que traerse todo y ' +
+        'filtrar en el cliente. Nunca concatenes ese valor dentro del SQL: ' +
+        'el aviso vale igual aquí, que es donde más tienta hacerlo.',
+    );
+  }
+
+  return lines.join('\n');
 }
