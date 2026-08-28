@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readSnapshot, writeSnapshot, indexSnapshot } from '../src/snapshot.mjs';
+import { readSnapshot, writeSnapshot, indexSnapshot, snapshotPath } from '../src/snapshot.mjs';
 import { planSchema } from '../src/schema.mjs';
 
 const dir = () => mkdtemp(join(tmpdir(), 'roble-snap-'));
@@ -216,4 +216,16 @@ test('una tabla que el snapshot tenía viva y el servidor perdió tampoco se rec
   const plan = planSchema([], [{ table: 'notas', columns: [{ name: 'valor', type: 'numeric' }] }], memoria);
 
   assert.equal(plan.safe.length, 0);
+});
+
+test('el snapshot va a la raíz del proyecto, no a la subcarpeta de trabajo', () => {
+  assert.equal(
+    snapshotPath({ projectDir: '/proyectos/mi-app' }),
+    '/proyectos/mi-app/roble.schema.json',
+  );
+  // ROBLE_SCHEMA_FILE sigue mandando cuando se indica.
+  assert.equal(
+    snapshotPath({ projectDir: '/proyectos/mi-app', schemaFile: '/otro/sitio.json' }),
+    '/otro/sitio.json',
+  );
 });

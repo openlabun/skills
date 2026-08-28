@@ -1,1 +1,4 @@
 node_modules/
+
+# Configuración local con el token dentro. La plantilla es el .example.
+.roble.mcp.env

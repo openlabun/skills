@@ -23,14 +23,16 @@ import { resolve } from 'node:path';
 const FILE = 'roble.schema.json';
 const VERSION = 2;
 
-export function snapshotPath(cwd = process.cwd()) {
-  return process.env.ROBLE_SCHEMA_FILE
-    ? resolve(process.env.ROBLE_SCHEMA_FILE)
-    : resolve(cwd, FILE);
+/**
+ * Junto a `.roble.mcp.env` cuando lo hay, que es la raíz del proyecto. Así el
+ * snapshot no acaba en la subcarpeta desde la que se lanzara el editor.
+ */
+export function snapshotPath({ projectDir = process.cwd(), schemaFile } = {}) {
+  return schemaFile ? resolve(schemaFile) : resolve(projectDir, FILE);
 }
 
 /** `null` la primera vez, que es normal y no un error. */
-export async function readSnapshot(path = snapshotPath()) {
+export async function readSnapshot(path) {
   let raw;
   try {
     raw = await readFile(path, 'utf8');
@@ -95,7 +97,7 @@ function computeRemoved(previous, current) {
   );
 }
 
-export async function writeSnapshot(schema, { contractId, previous = null, path = snapshotPath() } = {}) {
+export async function writeSnapshot(schema, { contractId, previous = null, path } = {}) {
   const body = {
     version: VERSION,
     contractId,

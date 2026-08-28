@@ -12,19 +12,26 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { loadConfig } from './src/env.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const TABLA = `zz_smoke_${Date.now().toString(36)}`;
 
+// Del `.roble.mcp.env` o del entorno, igual que el servidor.
+const cfg = loadConfig();
 const env = {
-  ROBLE_BASE_URL: process.env.ROBLE_BASE_URL,
-  ROBLE_CONTRACT_ID: process.env.ROBLE_CONTRACT_ID,
-  ROBLE_TOKEN: process.env.ROBLE_TOKEN,
+  ROBLE_BASE_URL: cfg.baseUrl,
+  ROBLE_CONTRACT_ID: cfg.contractId,
+  ROBLE_TOKEN: cfg.token,
 };
 
 for (const [k, v] of Object.entries(env)) {
   if (!v) {
-    console.error(`Falta ${k}. Uso:\n  ROBLE_BASE_URL=... ROBLE_CONTRACT_ID=... ROBLE_TOKEN=... node smoke.mjs`);
+    console.error(
+      `Falta ${k}. Ponlo en un .roble.mcp.env junto al proyecto (mira ` +
+        `.roble.mcp.env.example) o pásalo por entorno:\n` +
+        `  ROBLE_BASE_URL=... ROBLE_CONTRACT_ID=... ROBLE_TOKEN=... node smoke.mjs`,
+    );
     process.exit(2);
   }
 }

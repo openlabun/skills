@@ -35,12 +35,7 @@ ejecución, solo Node 20 o superior.
   "mcpServers": {
     "roble": {
       "command": "node",
-      "args": ["/ruta/a/skills/plugins/roble/mcp/src/index.mjs"],
-      "env": {
-        "ROBLE_BASE_URL": "https://roble.test-openlab.uninorte.edu.co",
-        "ROBLE_CONTRACT_ID": "${ROBLE_CONTRACT_ID}",
-        "ROBLE_TOKEN": "${ROBLE_TOKEN}"
-      }
+      "args": ["/ruta/a/skills/plugins/roble/mcp/src/index.mjs"]
     }
   }
 }
@@ -52,6 +47,32 @@ despliega y no hay contenedor.
 
 El SDK oficial de MCP está solo como dependencia de desarrollo, para que el
 smoke lo pruebe hablando como un cliente de verdad.
+
+## La configuración: `.roble.mcp.env`
+
+Un archivo por proyecto, en su raíz. Copia [`.roble.mcp.env.example`](.roble.mcp.env.example):
+
+```bash
+ROBLE_BASE_URL=https://roble-api.test-openlab.uninorte.edu.co
+ROBLE_CONTRACT_ID=miproyecto_ab12cd34ef
+ROBLE_TOKEN=roble_pat_...
+```
+
+**Añádelo al `.gitignore`.** Lleva un token dentro; si se te olvida, el MCP te
+lo dice en la respuesta de la primera herramienta que uses.
+
+Tres detalles que lo hacen cómodo con varios proyectos a la vez:
+
+- **Se busca hacia arriba** desde el directorio de trabajo, así que funciona
+  igual abriendo el editor en la raíz o en una subcarpeta.
+- **Gana sobre el entorno.** Un `export` global que quedó de otra sesión no
+  secuestra el proyecto que tienes delante. Lo que el archivo no defina sí se
+  toma del entorno.
+- **El snapshot va junto al archivo**, o sea en la raíz del proyecto, no en la
+  subcarpeta desde la que lanzaras el editor.
+
+Se relee en cada llamada, así que cambiar de token no obliga a reiniciar el
+editor.
 
 ## El token
 
@@ -73,11 +94,11 @@ secretos de GitHub lo detecten si se te escapa.
 ## Verificar que funciona
 
 ```bash
-ROBLE_BASE_URL=https://roble.test-openlab.uninorte.edu.co \
-ROBLE_CONTRACT_ID=miproyecto_ab12cd34ef \
-ROBLE_TOKEN=roble_pat_... \
 npm run smoke
 ```
+
+Toma la configuración del `.roble.mcp.env` como el servidor, o del entorno si
+prefieres pasarla a mano.
 
 Habla por stdio como lo haría el editor, crea una tabla desechable y la borra
 al terminar aunque algo falle en medio. Comprueba, entre otras cosas, que

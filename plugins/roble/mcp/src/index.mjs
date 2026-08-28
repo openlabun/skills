@@ -3,6 +3,7 @@ import { serve } from './rpc.mjs';
 import { RobleAdminClient } from './client.mjs';
 import { applyPlan, planSchema, readSchema } from './schema.mjs';
 import { indexSnapshot, readSnapshot, snapshotPath, writeSnapshot } from './snapshot.mjs';
+import { ENV_FILE, isGitIgnored, loadConfig } from './env.mjs';
 
 const DESIRED_SCHEMA = {
   type: 'object',
@@ -70,12 +71,21 @@ const TOOLS = [
   },
 ];
 
-function config() {
-  return {
-    baseUrl: process.env.ROBLE_BASE_URL,
-    contractId: process.env.ROBLE_CONTRACT_ID,
-    token: process.env.ROBLE_TOKEN,
-  };
+/**
+ * Se avisa una vez por proceso: repetirlo en cada herramienta sería ruido, y
+ * callarlo del todo dejaría un token vivo camino del repositorio.
+ */
+let avisadoDelGitignore = false;
+
+function avisoDeSeguridad(cfg) {
+  if (avisadoDelGitignore || !cfg.envFile) return null;
+  avisadoDelGitignore = true;
+  if (isGitIgnored(cfg.envFile)) return null;
+
+  return (
+    `Aviso: ${cfg.envFile} no está en .gitignore y lleva tu token dentro. ` +
+    `Añade "${ENV_FILE}" al .gitignore antes de commitear.`
+  );
 }
 
 function describePlan(plan) {
@@ -111,27 +121,32 @@ function describePlan(plan) {
 }
 
 async function callTool(name, args) {
-  // El cliente se construye por llamada, y no al arrancar, para que un token
-  // mal puesto salga como un error legible en la herramienta y no como un
-  // proceso que muere antes de que el editor llegue a hablar con él.
-  const client = new RobleAdminClient(config());
+  // Se lee por llamada, y no al arrancar, para que un token mal puesto salga
+  // como un error legible en la herramienta y no como un proceso que muere
+  // antes de que el editor llegue a hablar con él. Además recoge un cambio en
+  // el archivo sin reiniciar el editor.
+  const cfg = loadConfig();
+  const client = new RobleAdminClient(cfg);
+  const aviso = avisoDeSeguridad(cfg);
+  const conAviso = (texto) => (aviso ? `${texto}\n\n${aviso}` : texto);
+  const rutaSnapshot = snapshotPath(cfg);
 
   if (name === 'roble_schema_read') {
     const schema = await readSchema(client);
-    return { content: [{ type: 'text', text: JSON.stringify(schema, null, 2) }] };
+    return { content: [{ type: 'text', text: conAviso(JSON.stringify(schema, null, 2)) }] };
   }
 
   if (name === 'roble_schema_plan' || name === 'roble_schema_apply') {
     const actual = await readSchema(client);
-    const snapshot = await readSnapshot();
+    const snapshot = await readSnapshot(rutaSnapshot);
     const plan = planSchema(actual, args?.tables ?? [], indexSnapshot(snapshot));
 
     if (name === 'roble_schema_plan') {
       const memoria = snapshot
-        ? `Comparado contra ${snapshotPath()}, del ${snapshot.updatedAt}.`
-        : `Sin ${snapshotPath()}: primera vez, así que el plan no tiene memoria de ` +
+        ? `Comparado contra ${rutaSnapshot}, del ${snapshot.updatedAt}.`
+        : `Sin ${rutaSnapshot}: primera vez, así que el plan no tiene memoria de ` +
           'lo aplicado antes. Se crea al primer apply.';
-      return { content: [{ type: 'text', text: `${describePlan(plan)}\n\n${memoria}` }] };
+      return { content: [{ type: 'text', text: conAviso(`${describePlan(plan)}\n\n${memoria}`) }] };
     }
 
     const result = await applyPlan(client, plan);
@@ -168,8 +183,12 @@ async function callTool(name, args) {
       const despues = await readSchema(client);
       // `previous` es lo que hace que una baja se recuerde: sin él, el archivo
       // volvería a espejar el servidor y la memoria duraría un solo plan.
-      await writeSnapshot(despues, { contractId: client.contractId, previous: snapshot });
-      parts.push(`Snapshot actualizado: ${snapshotPath()}`);
+      await writeSnapshot(despues, {
+        contractId: client.contractId,
+        previous: snapshot,
+        path: rutaSnapshot,
+      });
+      parts.push(`Snapshot actualizado: ${rutaSnapshot}`);
     } catch (err) {
       parts.push(
         `Aviso: los cambios se aplicaron pero no se pudo escribir el snapshot ` +
@@ -177,7 +196,7 @@ async function callTool(name, args) {
       );
     }
 
-    return { content: [{ type: 'text', text: parts.join('\n\n') }] };
+    return { content: [{ type: 'text', text: conAviso(parts.join('\n\n')) }] };
   }
 
   throw new Error(`Herramienta desconocida: ${name}`);
