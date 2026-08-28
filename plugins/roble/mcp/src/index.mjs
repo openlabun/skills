@@ -3,6 +3,7 @@ import { serve } from './rpc.mjs';
 import { RobleAdminClient } from './client.mjs';
 import { applyPlan, planSchema, readSchema } from './schema.mjs';
 import { indexSnapshot, readSnapshot, snapshotPath, writeSnapshot } from './snapshot.mjs';
+import { callHint, createQuery, listQueries } from './queries.mjs';
 import { ENV_FILE, isGitIgnored, loadConfig } from './env.mjs';
 
 const DESIRED_SCHEMA = {
@@ -57,8 +58,48 @@ const TOOLS = [
     name: 'roble_schema_read',
     description:
       'Lee el esquema del proyecto: tablas, columnas, tipos y filas estimadas. ' +
-      'Empieza siempre por aquí, antes de proponer cambios.',
+      'Empieza siempre por aquí, antes de proponer cambios. ' +
+      'Nota: "user_system" aparece pero es de la plataforma y no se puede ' +
+      'modificar; para que una app lea usuarios, usa roble_queries_*.',
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'roble_queries_list',
+    description:
+      'Lista las consultas guardadas del proyecto, con su SQL y si están activas. ' +
+      'Son el camino por el que una app lee lo que su rol no puede leer directo: ' +
+      'el dueño guarda una consulta con los filtros que quiere publicar y la app ' +
+      'la llama por nombre. Míralas antes de crear una: puede que ya exista.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'roble_query_create',
+    description:
+      'Crea una consulta guardada. Es la forma correcta de exponer una lista de ' +
+      'usuarios: "user_system" no se abre a las apps porque daría a cualquier ' +
+      'usuario los datos de todos, así que se publica solo lo que una consulta ' +
+      'con filtros deje pasar. El servidor exige que sea de solo lectura, al ' +
+      'guardarla y cada vez que se ejecuta. Requiere token de escritura.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description:
+            'Con este nombre la llama la app. Elígelo estable: se ejecuta por ' +
+            'nombre, no por id.',
+        },
+        description: { type: 'string', description: 'Para qué es, en una línea.' },
+        query: {
+          type: 'string',
+          description:
+            'SELECT con los filtros y las columnas que se quieran publicar. ' +
+            'Los parámetros van como $1, $2… y se pasan como array al ejecutar; ' +
+            'no concatenes valores dentro del SQL.',
+        },
+      },
+      required: ['name', 'query'],
+    },
   },
   {
     name: 'roble_schema_plan',
@@ -152,6 +193,41 @@ async function callTool(name, args) {
   const aviso = avisoDeSeguridad(cfg);
   const conAviso = (texto) => (aviso ? `${texto}\n\n${aviso}` : texto);
   const rutaSnapshot = snapshotPath(cfg);
+
+  if (name === 'roble_queries_list') {
+    const queries = await listQueries(client);
+    if (queries.length === 0) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              'Este proyecto no tiene consultas guardadas.\n\n' +
+              'Si una app necesita la lista de usuarios, este es el camino: ' +
+              '"user_system" no se expone a las apps, y una consulta guardada ' +
+              'publica solo lo que sus filtros dejen pasar. Créala con ' +
+              'roble_query_create.',
+          },
+        ],
+      };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(queries, null, 2) }] };
+  }
+
+  if (name === 'roble_query_create') {
+    if (!args?.name?.trim() || !args?.query?.trim()) {
+      throw new Error('Hacen falta "name" y "query".');
+    }
+    await createQuery(client, args);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Consulta "${args.name}" guardada.\n\n${callHint(args.name.trim())}`,
+        },
+      ],
+    };
+  }
 
   if (name === 'roble_schema_read') {
     const schema = await readSchema(client);

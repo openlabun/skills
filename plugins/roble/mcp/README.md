@@ -131,6 +131,45 @@ debe sentirse deshacer una decisión.
 Guarda la forma y no los datos —ni filas ni tamaños— para que el diff de git
 no sea ruido.
 
+## La lista de usuarios: por consulta guardada
+
+`user_system` no se abre a las apps a propósito: daría a cualquier usuario los
+datos de todos. El camino es que el dueño del proyecto guarde una consulta con
+los filtros y las columnas que sí quiere publicar, y la app la llame por
+nombre.
+
+| Herramienta | Qué hace |
+|---|---|
+| `roble_queries_list` | Las consultas del proyecto, con su SQL y si están activas |
+| `roble_query_create` | Crea una. Requiere token de escritura |
+
+Es seguro por construcción y no por disciplina: el servidor valida que la
+consulta sea de solo lectura **dos veces**, al guardarla y otra vez en cada
+ejecución. Una consulta guardada no puede escribir aunque alguien edite la
+fila después.
+
+```
+roble_query_create {
+  name: "usuarios_publicos",
+  query: "SELECT name, email FROM user_system ORDER BY name"
+}
+```
+
+Desde la app, siempre por nombre —el id cambia si se recrea, el nombre lo
+elige el dueño—:
+
+```js
+const usuarios = await db.executeQueryByName('usuarios_publicos', []);
+```
+
+Los parámetros van como `$1`, `$2`… en el SQL y como array en la llamada.
+Nunca concatenes valores dentro del SQL.
+
+> **`SELECT *` sobre `user_system` no filtra nada.** Devuelve `user_id`,
+> `extra` y `metadata` —lo que el servidor guarda sobre el proveedor de login
+> y la verificación del correo— de todos los usuarios. Si la consulta existe
+> para publicar una lista, nombra las columnas.
+
 ## La clave primaria y `_id`
 
 Roble añade `_id uuid` a toda tabla, y **no se declara**: el plan la ignora al
