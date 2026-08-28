@@ -26,7 +26,7 @@ que corresponda según lo que pidas:
 | `use-roble` | El paquete [`roble`](https://pub.dev/packages/roble) en una app **Flutter** |
 | `use-roble-client` | [`roble-client`](https://www.npmjs.com/package/roble-client) en **JavaScript o TypeScript** — Node, navegador, React, React Native |
 
-Cada una empieza preguntando lo que hace falta saber: si se empieza **desde
+Cada skill empieza preguntando lo que hace falta saber: si se empieza **desde
 cero** o se **migra** algo que ya existe, desde qué, y qué parte de Roble se
 necesita.
 
@@ -35,6 +35,30 @@ Ambas traen un **smoke** que verifica la conexión contra el servidor real
 de la app. Registra una cuenta desechable y la borra al terminar, así que no
 deja rastro. Si el smoke pasa, el siguiente fallo está en la app y no en el
 cableado, que ahorra la mitad de la depuración.
+
+### El servidor MCP
+
+El plugin trae además un **servidor MCP** (`plugins/roble/mcp`) que deja al
+agente leer el esquema de un proyecto y ajustarlo a lo que la app necesita, sin
+salir del editor a hacer clics en la consola.
+
+| Herramienta | Qué hace |
+|---|---|
+| `roble_schema_read` | Tablas, columnas, tipos y filas estimadas |
+| `roble_schema_plan` | Compara con el esquema que la app necesita. No toca nada |
+| `roble_schema_apply` | Aplica **solo** lo aditivo: crear tablas, añadir columnas opcionales |
+
+La regla: aditivo se aplica, destructivo se propone. Borrar una columna o
+cambiar un tipo pierde datos, así que el plan lo describe y lo deja para una
+persona.
+
+Se autentica con un **token de acceso de proyecto** (`roble_pat_…`) que se
+genera en la consola, en Configuración → Tokens de acceso. Elige el alcance de
+solo lectura salvo que quieras que el agente cree tablas.
+
+No tiene dependencias en tiempo de ejecución: habla JSON-RPC por stdin/stdout
+y solo necesita Node 20. Detalles y smoke en
+[`plugins/roble/mcp/README.md`](plugins/roble/mcp/README.md).
 
 ## Usarlas sin Claude Code
 
@@ -51,6 +75,8 @@ con `node` y `flutter test`, sin agente de por medio.
 .claude-plugin/marketplace.json     catálogo
 plugins/roble/
   .claude-plugin/plugin.json
+  .mcp.json                         declara el servidor MCP
+  mcp/                              servidor MCP, sin dependencias
   skills/use-roble/                 Flutter
   skills/use-roble-client/          JavaScript
 ```

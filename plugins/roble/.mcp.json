@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "roble": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/src/index.mjs"],
+      "env": {
+        "ROBLE_BASE_URL": "${ROBLE_BASE_URL}",
+        "ROBLE_CONTRACT_ID": "${ROBLE_CONTRACT_ID}",
+        "ROBLE_TOKEN": "${ROBLE_TOKEN}"
+      }
+    }
+  }
+}
