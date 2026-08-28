@@ -7,12 +7,26 @@
  */
 
 export class RobleAdminError extends Error {
-  constructor(status, message, body) {
+  constructor(status, message, body, { needsWriteToken = false } = {}) {
     super(message);
     this.name = 'RobleAdminError';
     this.status = status;
     this.body = body;
+    /** El fallo se arregla con un token de escritura, no reintentando. */
+    this.needsWriteToken = needsWriteToken;
   }
+}
+
+/**
+ * Si el servidor rechazó por alcance de solo lectura.
+ *
+ * `ProjectPermissionGuard` lo dice con ese texto y solo para ese caso; un 403
+ * por rol insuficiente —un VIEWER intentando escribir— trae otro mensaje y no
+ * se arregla cambiando de token, así que no conviene confundirlos.
+ */
+function isReadOnlyRefusal(status, body) {
+  if (status !== 403) return false;
+  return /solo lectura/i.test(String(body?.message ?? body?.error ?? ''));
 }
 
 /** Traduce los fallos que un estudiante va a ver de verdad. */
@@ -25,10 +39,15 @@ function explain(status, body) {
       'Genera otro en la consola de Roble, en Configuración → Tokens de acceso.'
     );
   }
+  if (isReadOnlyRefusal(status, body)) {
+    // El texto completo lo compone quien conoce la ruta del .env; aquí solo se
+    // marca el caso.
+    return 'El token configurado es de solo lectura.';
+  }
   if (status === 403) {
     return (
-      `${fromServer ?? 'Sin permisos'}. Si el token es de solo lectura, para ` +
-      'escribir hace falta uno con alcance de lectura y escritura.'
+      `${fromServer ?? 'Sin permisos'}. Esto no se arregla con otro token: ` +
+      'depende del rol que tengas en el proyecto.'
     );
   }
   if (status === 404) return fromServer ?? 'No existe';
@@ -99,7 +118,11 @@ export class RobleAdminClient {
       }
     }
 
-    if (!res.ok) throw new RobleAdminError(res.status, explain(res.status, parsed), parsed);
+    if (!res.ok) {
+      throw new RobleAdminError(res.status, explain(res.status, parsed), parsed, {
+        needsWriteToken: isReadOnlyRefusal(res.status, parsed),
+      });
+    }
     return parsed;
   }
 

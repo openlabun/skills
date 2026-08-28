@@ -364,7 +364,7 @@ export async function applyPlan(client, plan) {
     } catch (err) {
       // No se corta: un paso que falla no debe impedir los que no dependen de
       // él, y el informe dice exactamente cuál quedó a medias.
-      failed.push({ step, error: err.message });
+      failed.push({ step, error: err.message, needsWriteToken: err.needsWriteToken === true });
     }
   }
 

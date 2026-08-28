@@ -119,3 +119,32 @@ export function loadConfig(startDir = process.cwd()) {
     projectDir: found?.dir ?? resolve(startDir),
   };
 }
+
+/**
+ * Qué tiene que hacer el usuario para darle escritura al MCP.
+ *
+ * Se compone aquí porque hace falta saber de dónde salió la configuración: no
+ * es lo mismo decir «pon el token en tu .env» que nombrar el archivo exacto, y
+ * menos cuando el que manda puede estar dos carpetas más arriba.
+ */
+export function writeTokenInstructions(cfg) {
+  const destino = cfg?.envFile
+    ? `Reemplaza \`ROBLE_TOKEN\` en ${cfg.envFile}`
+    : `Crea un ${ENV_FILE} en la raíz del proyecto con \`ROBLE_TOKEN=…\`` +
+      ' (y añádelo al .gitignore)';
+
+  return [
+    'Para esto hace falta un token con alcance de **lectura y escritura**, y el',
+    'que está configurado es de solo lectura. No lo puedo cambiar yo: los tokens',
+    'se emiten desde la consola.',
+    '',
+    '1. Abre la consola de Roble → tu proyecto → Configuración → Tokens de acceso.',
+    '2. «Nuevo token», alcance **Lectura y escritura**. Se muestra una sola vez.',
+    `3. ${destino}.`,
+    '4. Reinicia el editor para que el servidor MCP recoja el valor nuevo.',
+    '',
+    'El de solo lectura puedes conservarlo: sirve para leer el esquema y planear,',
+    'que es la mayor parte del trabajo. Y cuando termines de aplicar cambios,',
+    'volver a uno de lectura deja el proyecto a salvo de un error del agente.',
+  ].join('\n');
+}

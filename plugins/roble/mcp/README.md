@@ -80,6 +80,12 @@ editor.
 token de sesión de la consola. Se genera en la consola de Roble, en
 **Configuración → Tokens de acceso**, y se muestra una sola vez.
 
+**Empieza con uno de solo lectura.** Si luego pides algo que escribe —crear una
+tabla, guardar una consulta—, el MCP no falla con un 403 críptico: te dice qué
+generar, con qué alcance, y en qué archivo pegarlo, nombrando la ruta real. El
+de lectura puedes conservarlo, y volver a él al terminar deja el proyecto a
+salvo de un error del agente.
+
 Elige el alcance a conciencia:
 
 - **Solo lectura** para explorar y planear. Es el default, y con él

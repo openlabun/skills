@@ -4,7 +4,7 @@ import { RobleAdminClient } from './client.mjs';
 import { applyPlan, planSchema, readSchema } from './schema.mjs';
 import { indexSnapshot, readSnapshot, snapshotPath, writeSnapshot } from './snapshot.mjs';
 import { callHint, createQuery, listQueries } from './queries.mjs';
-import { ENV_FILE, isGitIgnored, loadConfig } from './env.mjs';
+import { ENV_FILE, isGitIgnored, loadConfig, writeTokenInstructions } from './env.mjs';
 
 const DESIRED_SCHEMA = {
   type: 'object',
@@ -197,7 +197,7 @@ function describePlan(plan) {
   return parts.join('\n\n');
 }
 
-async function callTool(name, args) {
+async function dispatch(name, args) {
   // Se lee por llamada, y no al arrancar, para que un token mal puesto salga
   // como un error legible en la herramienta y no como un proceso que muere
   // antes de que el editor llegue a hablar con él. Además recoge un cambio en
@@ -262,6 +262,16 @@ async function callTool(name, args) {
     }
 
     const result = await applyPlan(client, plan);
+
+    // Si lo que faltó fue alcance, eso es lo único que importa decir: el resto
+    // del informe es ruido cuando nada se pudo aplicar por la misma razón.
+    if (result.applied.length === 0 && result.failed.some((f) => f.needsWriteToken)) {
+      return {
+        content: [{ type: 'text', text: writeTokenInstructions(cfg) }],
+        isError: true,
+      };
+    }
+
     const parts = [];
 
     if (result.applied.length) {
@@ -312,6 +322,27 @@ async function callTool(name, args) {
   }
 
   throw new Error(`Herramienta desconocida: ${name}`);
+}
+
+/**
+ * Traduce el rechazo por alcance en la petición concreta que lo resuelve.
+ *
+ * Va aquí y no en `rpc.mjs`, que es transporte y no debe saber de tokens, ni
+ * dentro de cada herramienta, que tendría que repetirlo. Un 403 por alcance no
+ * es un error que reintentar: es una decisión que le toca a la persona.
+ */
+async function callTool(name, args) {
+  try {
+    return await dispatch(name, args);
+  } catch (err) {
+    if (err?.needsWriteToken) {
+      return {
+        content: [{ type: 'text', text: writeTokenInstructions(loadConfig()) }],
+        isError: true,
+      };
+    }
+    throw err;
+  }
 }
 
 serve({ name: 'roble-mcp', version: '0.1.0', tools: TOOLS, callTool });
