@@ -97,6 +97,28 @@ colaborador, deja de funcionar. Ponlo en el entorno, nunca dentro del
 repositorio — el prefijo `roble_pat_` está pensado para que los escáneres de
 secretos de GitHub lo detecten si se te escapa.
 
+## En qué versión estoy, y cómo actualizar
+
+```
+roble_version
+```
+
+Dice la versión del MCP y la del plugin, de dónde salió la configuración y
+contra qué proyecto apunta. No toca nada y funciona aunque el token esté mal
+—que es justo cuando hace falta diagnosticar—.
+
+Si una herramienta que sale en este documento no existe en tu instalación, es
+una versión vieja. Desde Claude Code:
+
+```
+/plugin marketplace update openlab
+```
+
+Y reinicia el editor: el servidor corre como proceso hijo suyo, así que hasta
+que no se relance sigue ejecutando el código anterior.
+
+Qué trae cada versión, en [el CHANGELOG del plugin](../CHANGELOG.md).
+
 ## Verificar que funciona
 
 ```bash

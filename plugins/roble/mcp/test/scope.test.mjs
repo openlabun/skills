@@ -65,3 +65,40 @@ test('dice que el de solo lectura sirve para el resto', () => {
   // busca.
   assert.match(writeTokenInstructions({ envFile: '/x/.roble.mcp.env' }), /puedes conservarlo/);
 });
+
+test('la versión sale del package.json, no de una constante', async () => {
+  const { mcpVersion, pluginVersion } = await import('../src/version.mjs');
+  const { readFileSync } = await import('node:fs');
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+  // Estaba escrita a mano en index.mjs además de aquí: una de las dos iba a
+  // quedarse atrás.
+  assert.equal(mcpVersion(), pkg.version);
+  assert.notEqual(mcpVersion(), 'desconocida');
+
+  const plugin = pluginVersion();
+  assert.equal(plugin.found, true);
+  // El plugin y el MCP van en paralelo; si esto falla, uno se quedó atrás.
+  assert.equal(plugin.version, pkg.version);
+});
+
+test('el servidor se anuncia con su versión real en el handshake', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { mcpVersion } = await import('../src/version.mjs');
+
+  const salida = execFileSync(
+    process.execPath,
+    [new URL('../src/index.mjs', import.meta.url).pathname],
+    {
+      input:
+        JSON.stringify({
+          jsonrpc: '2.0', id: 1, method: 'initialize',
+          params: { protocolVersion: '2025-06-18', capabilities: {} },
+        }) + '\n',
+      encoding: 'utf8',
+    },
+  );
+
+  const res = JSON.parse(salida.trim().split('\n')[0]);
+  assert.equal(res.result.serverInfo.version, mcpVersion());
+});

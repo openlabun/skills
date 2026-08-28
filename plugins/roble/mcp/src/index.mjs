@@ -4,6 +4,7 @@ import { RobleAdminClient } from './client.mjs';
 import { applyPlan, planSchema, readSchema } from './schema.mjs';
 import { indexSnapshot, readSnapshot, snapshotPath, writeSnapshot } from './snapshot.mjs';
 import { callHint, createQuery, listQueries } from './queries.mjs';
+import { mcpVersion, packageRoot, pluginVersion } from './version.mjs';
 import { ENV_FILE, isGitIgnored, loadConfig, writeTokenInstructions } from './env.mjs';
 
 const DESIRED_SCHEMA = {
@@ -63,6 +64,16 @@ const TOOLS = [
       'se puede modificar, y esta API no hace joins — para cualquier lectura ' +
       'que cruce tablas o agregue, usa roble_query_create en vez de resolverlo ' +
       'en la app.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'roble_version',
+    description:
+      'Qué versión del MCP y del plugin están corriendo, de dónde sale la ' +
+      'configuración y contra qué proyecto apunta. Úsalo cuando algo no ' +
+      'concuerde con la documentación —una herramienta que no existe, un ' +
+      'mensaje distinto—: casi siempre es una versión vieja sin actualizar. ' +
+      'No toca nada y no necesita token válido.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -203,6 +214,33 @@ async function dispatch(name, args) {
   // antes de que el editor llegue a hablar con él. Además recoge un cambio en
   // el archivo sin reiniciar el editor.
   const cfg = loadConfig();
+
+  if (name === 'roble_version') {
+    // Antes que nada y sin construir cliente: si el token está mal, esta es
+    // justamente la herramienta con la que se diagnostica.
+    const plugin = pluginVersion();
+    const lineaPlugin = !plugin.found
+      ? 'sin plugin alrededor: el MCP corre suelto'
+      : `plugin roble ${plugin.version ?? '(su manifiesto no declara versión)'}`;
+
+    const lineas = [
+      `roble-mcp ${mcpVersion()}`,
+      lineaPlugin,
+      `corriendo desde ${packageRoot}`,
+      '',
+      cfg.envFile ? `configuración: ${cfg.envFile}` : 'configuración: variables de entorno',
+      `proyecto: ${cfg.contractId ?? '(sin ROBLE_CONTRACT_ID)'}`,
+      `servidor: ${cfg.baseUrl ?? '(sin ROBLE_BASE_URL)'}`,
+      // El token nunca entero. El prefijo basta para saber cuál de los tuyos es.
+      `token: ${cfg.token ? `${cfg.token.slice(0, 26)}…` : '(sin ROBLE_TOKEN)'}`,
+      '',
+      'Para actualizar, desde Claude Code:',
+      '  /plugin marketplace update openlab',
+      'y reinicia el editor para que el servidor se relance con el código nuevo.',
+    ];
+    return { content: [{ type: 'text', text: lineas.join('\n') }] };
+  }
+
   const client = new RobleAdminClient(cfg);
   const aviso = avisoDeSeguridad(cfg);
   const conAviso = (texto) => (aviso ? `${texto}\n\n${aviso}` : texto);
@@ -345,4 +383,4 @@ async function callTool(name, args) {
   }
 }
 
-serve({ name: 'roble-mcp', version: '0.1.0', tools: TOOLS, callTool });
+serve({ name: 'roble-mcp', version: mcpVersion(), tools: TOOLS, callTool });

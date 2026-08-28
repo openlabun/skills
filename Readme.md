@@ -11,6 +11,41 @@ Marketplace de plugins de Claude Code de Uninorte OpenLab.
 
 Reinicia Claude Code después de instalar, para que descubra las skills.
 
+## Actualizar
+
+Un plugin ya instalado **no se entera solo** de que el repo cambió. Para traer
+la versión nueva:
+
+```
+/plugin marketplace update openlab
+```
+
+Y reinicia Claude Code: el servidor MCP corre como proceso hijo del editor, así
+que hasta que no se relance sigue ejecutando el código viejo aunque los
+archivos ya estén actualizados.
+
+### En qué versión estoy
+
+Pregúntaselo al propio MCP —«¿qué versión de roble tengo?»— o llama a
+`roble_version`. Responde algo así:
+
+```
+roble-mcp 1.0.0
+plugin roble 1.0.0
+corriendo desde /Users/tu/.claude/plugins/roble/mcp
+
+configuración: /ruta/de/tu/proyecto/.roble.mcp.env
+proyecto: miproyecto_ab12cd34ef
+servidor: https://roble-api.test-openlab.uninorte.edu.co
+```
+
+Si esa herramienta no existe, tienes una instalación anterior al versionado:
+actualiza. El detalle de qué trae cada versión está en
+[`plugins/roble/CHANGELOG.md`](plugins/roble/CHANGELOG.md).
+
+Las dos versiones van en paralelo a propósito. Si no coinciden, la instalación
+quedó a medias y conviene reinstalar el plugin.
+
 Funciona en cualquier equipo: el marketplace es este repo, así que basta con
 tener acceso a él. Para actualizar, `/plugin marketplace update openlab`.
 
@@ -74,7 +109,8 @@ con `node` y `flutter test`, sin agente de por medio.
 ```
 .claude-plugin/marketplace.json     catálogo
 plugins/roble/
-  .claude-plugin/plugin.json
+  .claude-plugin/plugin.json        nombre y versión del plugin
+  CHANGELOG.md                      qué trae cada versión
   .mcp.json                         declara el servidor MCP
   mcp/                              servidor MCP, sin dependencias
   skills/use-roble/                 Flutter
