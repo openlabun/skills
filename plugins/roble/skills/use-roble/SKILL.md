@@ -1,6 +1,6 @@
 ---
 name: use-roble
-description: Integrar el paquete roble (Roble de Uninorte OpenLab) en una app Flutter. Usar para añadir autenticación, base de datos, árbol JSON, login con Google o tiempo real de Roble, para empezar una app desde cero, o para migrar una que ya habla con Roble con http a mano. Incluye un smoke que verifica la conexión contra el servidor real.
+description: Integrar el paquete roble (Roble de Uninorte OpenLab) en una app Flutter. Usar para añadir autenticación, base de datos, árbol JSON, archivos, login con Google o tiempo real de Roble, para empezar una app desde cero, o para migrar una que ya habla con Roble con http a mano. Incluye un smoke que verifica la conexión contra el servidor real.
 ---
 
 # Integrar el paquete `roble`
@@ -12,7 +12,8 @@ no lo tiene**, o para migrar una que ya habla con Roble a mano.
 
 1. ¿**Desde cero** o **migrando** algo que ya existe?
 2. Si migra: ¿desde `http`/`dio` crudos, o desde una versión anterior?
-3. ¿Qué necesita: solo cuentas, datos, login social, tiempo real, o todo?
+3. ¿Qué necesita: solo cuentas, datos, archivos, login social, tiempo real, o
+   todo?
 4. ¿A qué plataformas apunta? Android e iOS piden configuración nativa para
    el login con Google; web no.
 
@@ -112,6 +113,78 @@ Hace falta, además:
 - Pasar `ssoRedirect` con el nombre de ese destino.
 - En iOS, `googleIosClientId`. El Client ID **web** no: ese lo trae Roble.
 
+## Cómo organizar el proyecto
+
+**Propón por defecto una arquitectura limpia por features**, y di por qué.
+No la impongas: si quien pregunta prefiere otra cosa, o la app es un
+prototipo de tres pantallas, sigue su camino sin discutir.
+
+```
+lib/
+  core/
+    roble.dart            # el cliente, creado una sola vez
+  features/
+    auth/
+      data/               # implementa el repositorio hablando con Roble
+      domain/             # entidades y el contrato del repositorio
+      presentation/       # pantallas, widgets, controladores
+    tareas/
+      data/
+      domain/
+      presentation/
+```
+
+Lo que hace que valga la pena aquí, y no es teoría: **el paquete de Roble se
+menciona solo en `data/`**. El `domain/` define qué necesita la feature y el
+`data/` lo resuelve con `db.read(...)`, `db.files.upload(...)`, lo que sea.
+
+Eso compra tres cosas concretas en un proyecto con Roble:
+
+- **Las pantallas se prueban sin red.** El `domain/` es el contrato, así que
+  en un test se sustituye por uno falso. Sin esto hay que levantar sesión
+  real para probar un widget.
+- **Un cambio del backend no llega a la interfaz.** Cambiar de una tabla a
+  una consulta guardada, o de una URL fija a `files.getDownloadUrl()`, se
+  queda en `data/`.
+- **Las features no se enredan entre ellas.** Cada carpeta se lee, se mueve
+  y se borra sola.
+
+Para una app pequeña, `data/` y `domain/` en el mismo archivo de la feature
+es un punto medio razonable. Lo que sí conviene sostener siempre, porque
+cuesta poco: **que los widgets no llamen a `db` directo**.
+
+Para decidir rápido según el tamaño:
+
+| Tamaño | Sugerencia |
+|---|---|
+| Prototipo, 2-3 pantallas | Una carpeta por pantalla y `core/roble.dart`. Sin capas. |
+| App real | Features con `data`/`domain`/`presentation`. |
+| App con varios que la tocan | Lo anterior, y un test por repositorio. |
+
+## Archivos
+
+`db.files` sube y descarga contra un bucket compatible con S3. Los bytes van
+**directo entre la app y el bucket**; Roble solo firma el permiso y lleva la
+metadata.
+
+```dart
+final fileId = await db.files.upload(
+  fileName: 'foto.jpg',
+  mimeType: 'image/jpeg',
+  data: bytes,           // Uint8List
+);
+
+final archivos = await db.files.list();
+final bytes = await db.files.download(fileId);
+```
+
+El namespace es `files`, no `storage`: `RobleTokenStorage` ya ocupa ese
+nombre y es otra cosa —dónde se guarda la sesión, no los archivos—.
+
+**Antes de escribir nada, verifica que el proyecto tenga bucket.** Se conecta
+en la consola, en *Configuración → Almacenamiento*. Sin eso, todas las
+llamadas fallan y el error no dice que falte configurar el proyecto.
+
 ## Migrar desde `http`/`dio` crudos
 
 | Lo que había | Pasa a ser |
@@ -172,6 +245,21 @@ Lo que gana: `signInWithGoogle()` y el resto del login social v2, `db.json`
 
 - **`id` y `userId` no son lo mismo** en el perfil. `userId` es el del
   usuario, el que referencian tus tablas; `id` es el de la fila del perfil.
+
+- **Los archivos exigen un bucket conectado en la consola.** Es config del
+  proyecto, no del código: sin ella `files.upload()` falla siempre. Si el
+  proyecto es nuevo, esto es lo primero que hay que mirar.
+
+- **`files`, no `storage`.** `RobleTokenStorage` es la sesión; los archivos
+  cuelgan de `db.files`.
+
+- **Las URL de descarga caducan a los pocos minutos.** No las guardes en el
+  estado ni en tu base: pide una nueva al mostrar el archivo, o usa
+  `download()`, que la pide y trae los bytes.
+
+- **Un archivo que no termina de subir no aparece en `list()`.** La subida
+  son tres pasos y `upload()` los hace por ti; si el de en medio falla, la
+  fila queda pendiente y se ignora. No es que la lista esté rota.
 
 ## Troubleshooting
 

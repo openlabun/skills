@@ -1,6 +1,6 @@
 ---
 name: use-roble-client
-description: Integrar roble-client (Roble de Uninorte OpenLab) en un proyecto JavaScript o TypeScript — Node, navegador, React o React Native. Usar para añadir autenticación, base de datos, árbol JSON o tiempo real de Roble, para empezar un proyecto desde cero, o para migrar desde fetch/axios crudos o desde una versión anterior del paquete. Incluye un smoke que verifica la conexión contra el servidor real.
+description: Integrar roble-client (Roble de Uninorte OpenLab) en un proyecto JavaScript o TypeScript — Node, navegador, React o React Native. Usar para añadir autenticación, base de datos, árbol JSON, archivos o tiempo real de Roble, para empezar un proyecto desde cero, o para migrar desde fetch/axios crudos o desde una versión anterior del paquete. Incluye un smoke que verifica la conexión contra el servidor real.
 ---
 
 # Integrar `roble-client`
@@ -13,7 +13,7 @@ que no lo tiene**, o para migrar uno que ya habla con Roble a mano.
 1. ¿**Desde cero** o **migrando** algo que ya existe?
 2. Si migra: ¿desde `fetch`/`axios` crudos, o desde una versión anterior de
    `roble-client`?
-3. ¿Qué necesita: solo cuentas, datos, tiempo real, o todo?
+3. ¿Qué necesita: solo cuentas, datos, archivos, tiempo real, o todo?
 4. ¿Dónde corre: navegador, Node, React Native?
 
 La respuesta a la 4 decide el almacenamiento de sesión, que es donde más
@@ -83,6 +83,73 @@ Crearlo en cada componente da a cada copia su propia sesión.
 
 Lo demás —cuentas, tablas, árbol JSON, tiempo real, qué devuelve cada
 método— está en el README del paquete. No lo repitas aquí.
+
+## Cómo organizar el proyecto
+
+**Propón por defecto una arquitectura limpia por features**, y di por qué.
+No la impongas: si quien pregunta prefiere otra cosa, o es un prototipo de
+tres pantallas, sigue su camino sin discutir.
+
+```
+src/
+  shared/
+    roble.js              # el cliente, creado una sola vez
+  features/
+    auth/
+      api.js              # habla con Roble: login, perfil
+      model.js            # tipos y reglas de la feature
+      ui/                 # componentes
+    tareas/
+      api.js
+      model.js
+      ui/
+```
+
+Lo que hace que valga la pena aquí, y no es teoría: **el paquete de Roble se
+menciona solo en `api.js`**. Los componentes llaman a la feature, no a `db`.
+
+Eso compra tres cosas concretas en un proyecto con Roble:
+
+- **Los componentes se prueban sin red.** Se sustituye `api.js` por uno
+  falso. Sin esto hay que levantar sesión real para probar un render.
+- **Un cambio del backend no llega a la interfaz.** Pasar de `db.read()` a
+  `db.executeQueryByName()` cuando la lectura crezca —o de una URL fija a
+  `db.files.getDownloadUrl()`— se queda en `api.js`.
+- **Las features no se enredan.** Cada carpeta se lee, se mueve y se borra
+  sola.
+
+Lo que conviene sostener siempre, porque cuesta poco: **que los componentes
+no importen `roble-client` directo**. Si un `.jsx` importa el paquete, la
+feature ya se filtró a la interfaz.
+
+Para decidir rápido según el tamaño:
+
+| Tamaño | Sugerencia |
+|---|---|
+| Prototipo, 2-3 pantallas | Una carpeta por pantalla y `shared/roble.js`. Sin capas. |
+| App real | Features con `api` / `model` / `ui`. |
+| App con varios que la tocan | Lo anterior, y un test por `api.js`. |
+
+## Archivos
+
+`db.files` sube y descarga contra un bucket compatible con S3. Los bytes van
+**directo entre el cliente y el bucket**; Roble solo firma el permiso y lleva
+la metadata.
+
+```js
+const { fileId } = await db.files.upload({
+  fileName: 'foto.jpg',
+  mimeType: 'image/jpeg',
+  data: blob,          // Blob, ArrayBuffer, Uint8Array o string
+});
+
+const archivos = await db.files.list();
+const { downloadUrl } = await db.files.getDownloadUrl(fileId);
+```
+
+**Antes de escribir nada, verifica que el proyecto tenga bucket.** Se conecta
+en la consola, en *Configuración → Almacenamiento*. Sin eso, todas las
+llamadas fallan y el error no dice que falte configurar el proyecto.
 
 ## Migrar desde `fetch`/`axios` crudos
 
@@ -173,6 +240,19 @@ Después de subir de versión, corre el smoke antes de tocar la app.
 
 - **`id` y `userId` no son lo mismo** en el perfil. `userId` es el del
   usuario, el que referencian tus tablas; `id` es el de la fila del perfil.
+
+- **Los archivos exigen un bucket conectado en la consola.** Es config del
+  proyecto, no del código: sin ella `files.upload()` falla siempre. Si el
+  proyecto es nuevo, esto es lo primero que hay que mirar.
+
+- **Las URL de descarga caducan a los pocos minutos.** No las guardes en tu
+  base de datos ni en el estado: pide una nueva con `getDownloadUrl()` en el
+  momento de mostrar el archivo.
+
+- **Un archivo que no termina de subir no aparece en `list()`.** La subida
+  son tres pasos (pedir permiso, subir al bucket, confirmar) y `upload()` los
+  hace por ti; si el de en medio falla, la fila queda pendiente y se ignora.
+  No es que la lista esté rota.
 
 ## Troubleshooting
 
