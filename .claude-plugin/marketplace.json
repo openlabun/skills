@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "roble",
-      "description": "Integrar los clientes de Roble en un proyecto: el paquete roble en Flutter o roble-client en JavaScript y TypeScript. Cubre empezar desde cero y migrar desde http/fetch crudos o desde una versión anterior, y trae un smoke que verifica la conexión contra el servidor real antes de escribir código de app.",
+      "description": "Integrar los clientes de Roble en un proyecto: el paquete roble en Flutter o roble-client en JavaScript y TypeScript. Cubre empezar desde cero y migrar desde http/fetch crudos o desde una versión anterior, y trae un smoke que verifica la conexión contra el servidor real antes de escribir código de app. Incluye además un servidor MCP que lee el esquema de un proyecto y lo ajusta a lo que la app necesita, sin salir del editor.",
       "author": {
         "name": "Uninorte OpenLab"
       },
