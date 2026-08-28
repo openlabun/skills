@@ -70,7 +70,10 @@ export async function readSchema(client) {
  *
  * No toca nada: devuelve los pasos, cada uno marcado `safe` o no, y por qué.
  */
-export function planSchema(actual, desired) {
+const SIN_MEMORIA = { known: new Map(), removedColumns: new Set(), removedTables: new Set() };
+
+export function planSchema(actual, desired, memory = SIN_MEMORIA) {
+  const { known, removedColumns, removedTables } = { ...SIN_MEMORIA, ...memory };
   const byTable = new Map(actual.map((t) => [t.table, t]));
   const steps = [];
 
@@ -79,17 +82,28 @@ export function planSchema(actual, desired) {
     const columns = (want.columns ?? []).filter((c) => !RESERVED.has(c.name));
 
     if (!have) {
+      // Dos fuentes, y hacen falta las dos. `known` la detecta en el momento:
+      // el snapshot la tenía viva y el servidor ya no. `removedTables` la
+      // mantiene detectada después, cuando el siguiente apply reescriba el
+      // archivo y deje de aparecer entre las vivas.
+      const laBorraron = removedTables.has(want.table) || known.has(want.table);
+
       steps.push({
         action: 'create_table',
         table: want.table,
-        safe: true,
-        reason: 'La tabla no existe. Crearla no toca datos de nadie.',
+        safe: !laBorraron,
+        reason: laBorraron
+          ? `"${want.table}" figura como dada de baja en roble.schema.json: se ` +
+            'borró después de crearla. Si de verdad la quieres de vuelta, quita ' +
+            'su entrada de la lista "removed" y vuelve a aplicar.'
+          : 'La tabla no existe. Crearla no toca datos de nadie.',
         columns: columns.map((c) => ({
           name: c.name,
           type: c.type,
-          // Se crean admitiendo nulos aunque se pidan obligatorias: una tabla
-          // recién creada está vacía, pero mantener la misma regla en todos
-          // los caminos evita que el plan dependa de si la tabla ya existía.
+          // Aquí sí se respeta `nullable: false`: la tabla nace vacía, así que
+          // no hay filas existentes a las que exigirles un valor que no tienen.
+          // Es el mismo criterio que en `add_column`, donde la obligatoriedad
+          // solo es segura si la tabla está vacía.
           nullable: c.nullable !== false,
         })),
       });
@@ -104,20 +118,35 @@ export function planSchema(actual, desired) {
       if (!existing) {
         const wantsRequired = col.nullable === false;
         const hasRows = (have.rowsEstimated ?? 0) > 0;
+        // Igual que con las tablas: `known` la caza en caliente y
+        // `removedColumns` conserva la constancia después de reescribir.
+        const laBorraron =
+          removedColumns.has(`${want.table}.${col.name}`) ||
+          (known.get(want.table)?.has(col.name) ?? false);
+
+        let safe = !(wantsRequired && hasRows);
+        let reason =
+          wantsRequired && hasRows
+            ? `"${col.name}" se pide obligatoria y "${want.table}" ya tiene filas: ` +
+              'las existentes no tendrían valor. Créala opcional, rellénala y ' +
+              'luego hazla obligatoria.'
+            : 'La columna no existe. Añadirla admitiendo nulos no toca las filas que ya están.';
+
+        if (laBorraron) {
+          safe = false;
+          reason =
+            `"${want.table}.${col.name}" figura como dada de baja en ` +
+            'roble.schema.json: se borró después de crearla. Volver a añadirla ' +
+            'desharía esa decisión; si la quieres de vuelta, quita su entrada de ' +
+            'la lista "removed" y vuelve a aplicar.';
+        }
 
         steps.push({
           action: 'add_column',
           table: want.table,
           column: { name: col.name, type: col.type, nullable: !wantsRequired },
-          // Añadir NOT NULL a una tabla con filas falla o rellena basura: las
-          // filas que ya están no tienen valor para la columna nueva.
-          safe: !(wantsRequired && hasRows),
-          reason:
-            wantsRequired && hasRows
-              ? `"${col.name}" se pide obligatoria y "${want.table}" ya tiene filas: ` +
-                'las existentes no tendrían valor. Créala opcional, rellénala y ' +
-                'luego hazla obligatoria.'
-              : 'La columna no existe. Añadirla admitiendo nulos no toca las filas que ya están.',
+          safe,
+          reason,
         });
         continue;
       }
@@ -141,15 +170,20 @@ export function planSchema(actual, desired) {
       if (RESERVED.has(existing.name)) continue;
       if (columns.some((c) => c.name === existing.name)) continue;
 
+      const laPusimosNosotros = known.get(want.table)?.has(existing.name) ?? false;
+
       steps.push({
         action: 'drop_column',
         table: want.table,
         column: existing.name,
         safe: false,
-        reason:
-          `"${want.table}.${existing.name}" está en la base y no en lo pedido. ` +
-          'Puede ser una columna que sobra o una que el esquema pedido olvidó: ' +
-          'borrarla pierde sus datos, así que se deja como está.',
+        reason: laPusimosNosotros
+          ? `"${want.table}.${existing.name}" la aplicamos antes y el esquema nuevo ` +
+            'ya no la pide: parece que la app dejó de usarla. Aun así no se borra ' +
+            'sola, porque sus datos se van con ella.'
+          : `"${want.table}.${existing.name}" está en la base y no en lo pedido, y no ` +
+            'la creamos nosotros: puede venir de la consola o de otra herramienta. ' +
+            'No se toca.',
       });
     }
   }

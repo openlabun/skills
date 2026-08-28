@@ -2,6 +2,7 @@
 import { serve } from './rpc.mjs';
 import { RobleAdminClient } from './client.mjs';
 import { applyPlan, planSchema, readSchema } from './schema.mjs';
+import { indexSnapshot, readSnapshot, snapshotPath, writeSnapshot } from './snapshot.mjs';
 
 const DESIRED_SCHEMA = {
   type: 'object',
@@ -122,10 +123,15 @@ async function callTool(name, args) {
 
   if (name === 'roble_schema_plan' || name === 'roble_schema_apply') {
     const actual = await readSchema(client);
-    const plan = planSchema(actual, args?.tables ?? []);
+    const snapshot = await readSnapshot();
+    const plan = planSchema(actual, args?.tables ?? [], indexSnapshot(snapshot));
 
     if (name === 'roble_schema_plan') {
-      return { content: [{ type: 'text', text: describePlan(plan) }] };
+      const memoria = snapshot
+        ? `Comparado contra ${snapshotPath()}, del ${snapshot.updatedAt}.`
+        : `Sin ${snapshotPath()}: primera vez, así que el plan no tiene memoria de ` +
+          'lo aplicado antes. Se crea al primer apply.';
+      return { content: [{ type: 'text', text: `${describePlan(plan)}\n\n${memoria}` }] };
     }
 
     const result = await applyPlan(client, plan);
@@ -154,6 +160,23 @@ async function callTool(name, args) {
           result.skipped.map((s) => `  ! ${s.reason}`).join('\n'),
       );
     }
+
+    // El snapshot se escribe desde el esquema releído del servidor, no desde lo
+    // que se pidió: si un paso falló a medias, la memoria refleja lo que hay de
+    // verdad y no lo que se pretendía.
+    try {
+      const despues = await readSchema(client);
+      // `previous` es lo que hace que una baja se recuerde: sin él, el archivo
+      // volvería a espejar el servidor y la memoria duraría un solo plan.
+      await writeSnapshot(despues, { contractId: client.contractId, previous: snapshot });
+      parts.push(`Snapshot actualizado: ${snapshotPath()}`);
+    } catch (err) {
+      parts.push(
+        `Aviso: los cambios se aplicaron pero no se pudo escribir el snapshot ` +
+          `(${err.message}). El próximo plan no tendrá memoria de esto.`,
+      );
+    }
+
     return { content: [{ type: 'text', text: parts.join('\n\n') }] };
   }
 

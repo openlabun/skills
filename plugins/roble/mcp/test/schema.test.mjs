@@ -194,3 +194,19 @@ test('apply nunca llama a delete-table ni a drop-column', async () => {
 
   assert.ok(!rutas.some((r) => /delete|drop/.test(r)), `rutas usadas: ${rutas}`);
 });
+
+test('al crear una tabla se respeta lo obligatorio: nace vacía', () => {
+  const plan = planSchema([], [
+    {
+      table: 'notas',
+      columns: [
+        { name: 'evaluacion_id', type: 'uuid', nullable: false },
+        { name: 'observacion', type: 'text' },
+      ],
+    },
+  ]);
+
+  const cols = new Map(plan.safe[0].columns.map((c) => [c.name, c.nullable]));
+  assert.equal(cols.get('evaluacion_id'), false);
+  assert.equal(cols.get('observacion'), true);
+});

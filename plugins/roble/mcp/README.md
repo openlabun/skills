@@ -83,6 +83,33 @@ Habla por stdio como lo haría el editor, crea una tabla desechable y la borra
 al terminar aunque algo falle en medio. Comprueba, entre otras cosas, que
 `apply` **no** borra una columna que sobra ni cambia un tipo.
 
+## `roble.schema.json`
+
+Después de cada `apply`, el servidor escribe un snapshot en la raíz del
+proyecto (o donde diga `ROBLE_SCHEMA_FILE`). Lo mantiene la herramienta, no
+tú, y va al repositorio: es lo que le da memoria al plan entre sesiones.
+
+Sin él, una diferencia se puede leer de dos maneras opuestas: una columna que
+falta puede ser una que nunca se creó, o una que alguien borró a propósito
+desde la consola. Con él, lo segundo se detecta y **no** se deshace solo.
+
+```json
+{
+  "version": 2,
+  "contractId": "miproyecto_ab12cd34ef",
+  "updatedAt": "2026-08-28T00:26:54.138Z",
+  "tables": [{ "table": "notas", "columns": [{ "name": "valor", "type": "numeric", "nullable": false }] }],
+  "removed": [{ "table": "notas", "column": "observacion", "at": "2026-08-28T00:26:53.433Z" }]
+}
+```
+
+`removed` es la lista de bajas. Si quieres revivir algo que está ahí, quita su
+entrada y vuelve a aplicar: es una edición pequeña y explícita, que es como
+debe sentirse deshacer una decisión.
+
+Guarda la forma y no los datos —ni filas ni tamaños— para que el diff de git
+no sea ruido.
+
 ## Tipos que Roble acepta
 
 `text`, `int`, `bigint`, `smallint`, `numeric`, `real`, `double precision`,
