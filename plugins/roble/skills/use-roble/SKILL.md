@@ -133,11 +133,16 @@ seguro y los recupera con `restoreSession()`.
 **Es aditivo: no desaparece ningún método ni cambia lo que devuelve ninguno.**
 Actualizar no debería obligar a tocar nada.
 
-Lo que gana: `signInWithGoogle()` y el resto del login social v2, `watchTable`
-/ `watchRecord`, `db.json` (árbol JSON), `executeQueryByName`, y `role` en el
-perfil.
+Lo que gana: `signInWithGoogle()` y el resto del login social v2, `db.json`
+(árbol JSON), `executeQueryByName`, y `role` en el perfil.
 
 `role` necesita `auth-service` v1.7.8 o más; contra uno anterior llega `null`.
+
+> **No uses `watchTable` ni `watchRecord`.** Siguen en el paquete, pero el
+> servidor ya no replica tablas SQL: rechaza esas suscripciones con
+> `REALTIME_UNKNOWN_COLLECTION` y no entregan nada. Para tiempo real, `db.json`
+> sobre una colección del árbol. Es un cambio del servidor, así que quedarse en
+> una versión vieja del paquete no lo evita.
 
 ## Gotchas
 

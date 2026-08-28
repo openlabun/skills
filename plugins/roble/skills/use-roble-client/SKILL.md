@@ -25,7 +25,7 @@ gente se atasca (ver Gotchas).
 npm install roble-client
 ```
 
-Verificado con `roble-client@3.4.0` y Node v25.1.0.
+Verificado con `roble-client@3.5.0` y Node v25.1.0.
 
 ## Verificar que funciona: el smoke
 
@@ -110,12 +110,22 @@ que solo aparecen al recargar.
   `setTokens()`, `clearTokens()` y `onTokenUpdate` ya no existen. Queda
   `isLoggedIn` para consultar y `restoreSession()` para recuperar. Si el
   código llama a `setTokens()`, no compila.
-- **3.1.0 quitó el tiempo real y 3.3.0 lo devolvió**, con otra forma:
-  `db.watchTable(tabla, cb)` devuelve la función que cancela. Si venías de
-  3.0.0, la API vieja (`db.realtime.ref(...)`) ya no está.
+- **3.1.0 quitó el tiempo real y 3.3.0 lo devolvió**, con otra forma. Si
+  venías de 3.0.0, la API vieja (`db.realtime.ref(...)`) ya no está. Ojo con
+  lo que digan los tutoriales de esa época: la forma que trajo 3.3.0 era
+  `db.watchTable`, y desde 3.5.0 ya no sirve (ver abajo).
 - **3.2.0 trajo `db.json`** (árbol JSON) y `executeQueryByName`.
 - **3.4.0 trajo `role` en el perfil.** Necesita `auth-service` v1.7.8 o más;
   contra uno anterior llega `null`.
+- **3.5.0: el tiempo real escucha colecciones del árbol JSON, no tablas SQL.**
+  `watchTable` y `watchRecord` quedan obsoletos: el servidor rechaza esas
+  suscripciones con `REALTIME_UNKNOWN_COLLECTION` y ya no entregan nada. Usa
+  `db.json.watch('coleccion', cb)`.
+
+  El cambio es del servidor, así que **no se arregla quedándose en 3.4.0**:
+  quien no actualice tendrá `watchTable` fallando igual, pero sin el aviso.
+  Desde 3.5.0, un fallo de tiempo real sin `onError` sale por `console.warn`
+  en vez de perderse.
 
 Después de subir de versión, corre el smoke antes de tocar la app.
 
