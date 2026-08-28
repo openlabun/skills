@@ -1,4 +1,4 @@
 node_modules/
 
-# Configuración local con el token dentro. La plantilla es el .example.
-.roble.mcp.env
+# Artefacto por proyecto: lo escribe el MCP donde corre, no aquí.
+roble.schema.json
