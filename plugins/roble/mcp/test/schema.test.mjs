@@ -233,3 +233,96 @@ test('saved_queries ni siquiera aparece al leer el esquema', async () => {
   const schema = await readSchema(client);
   assert.deepEqual(schema.map((t) => t.table), ['tareas']);
 });
+
+test('avisa cuando una columna _id no cuadra en tipo con la tabla a la que apunta', () => {
+  const actual = [
+    { table: 'tareas', rowsEstimated: 0, columns: [{ name: '_id', type: 'uuid', nullable: false }] },
+  ];
+  const plan = planSchema(actual, [
+    { table: 'notas', columns: [{ name: 'tarea_id', type: 'text' }] },
+  ]);
+
+  assert.equal(plan.warnings.length, 1);
+  assert.equal(plan.warnings[0].references, 'tareas');
+  assert.equal(plan.warnings[0].expected, 'uuid');
+  assert.equal(plan.warnings[0].found, 'text');
+  // Es aviso, no bloqueo: la tabla se sigue creando.
+  assert.equal(plan.safe.length, 1);
+});
+
+test('no avisa cuando el tipo sí cuadra', () => {
+  const actual = [
+    { table: 'tareas', rowsEstimated: 0, columns: [{ name: '_id', type: 'uuid', nullable: false }] },
+  ];
+  const plan = planSchema(actual, [
+    { table: 'notas', columns: [{ name: 'tarea_id', type: 'uuid' }] },
+  ]);
+  assert.equal(plan.warnings.length, 0);
+});
+
+test('no adivina cuando la tabla destino no existe', () => {
+  const plan = planSchema([], [{ table: 'notas', columns: [{ name: 'cliente_id', type: 'text' }] }]);
+  // Sin "clientes" en ninguna parte, afirmar algo sería inventar.
+  assert.equal(plan.warnings.length, 0);
+});
+
+test('resuelve el plural español al buscar la tabla', () => {
+  const actual = [
+    { table: 'evaluaciones', rowsEstimated: 0, columns: [{ name: '_id', type: 'uuid' }] },
+    { table: 'profesores', rowsEstimated: 0, columns: [{ name: '_id', type: 'uuid' }] },
+  ];
+  const plan = planSchema(actual, [
+    { table: 'notas', columns: [
+      { name: 'evaluacion_id', type: 'int' },
+      { name: 'profesor_id', type: 'int' },
+    ] },
+  ]);
+  assert.deepEqual(plan.warnings.map((w) => w.references).sort(), ['evaluaciones', 'profesores']);
+});
+
+test('una tabla que el mismo plan va a crear también cuenta como destino', () => {
+  const plan = planSchema([], [
+    { table: 'cursos', columns: [{ name: 'nombre', type: 'text' }] },
+    { table: 'notas', columns: [{ name: 'curso_id', type: 'text' }] },
+  ]);
+  assert.equal(plan.warnings.length, 1);
+  assert.equal(plan.warnings[0].expected, 'uuid');
+});
+
+test('sin PK declarada, la clave la pone Roble con _id', () => {
+  const plan = planSchema([], [{ table: 'notas', columns: [{ name: 'valor', type: 'int' }] }]);
+  assert.equal(plan.safe[0].columns.every((c) => c.primary === false), true);
+});
+
+test('con PK declarada, se le pasa al servidor', () => {
+  const plan = planSchema([], [
+    { table: 'matriculas', columns: [
+      { name: 'codigo', type: 'varchar(20)', nullable: false, primary: true },
+      { name: 'anio', type: 'int' },
+    ] },
+  ]);
+  const cols = new Map(plan.safe[0].columns.map((c) => [c.name, c.primary]));
+  assert.equal(cols.get('codigo'), true);
+  assert.equal(cols.get('anio'), false);
+});
+
+test('apply envía isPrimary tal como se declaró', async () => {
+  const enviado = [];
+  const client = { post: async (_p, body) => enviado.push(body) };
+  const plan = planSchema([], [
+    { table: 'matriculas', columns: [{ name: 'codigo', type: 'varchar(20)', primary: true }] },
+  ]);
+  await applyPlan(client, plan);
+  assert.equal(enviado[0].columns[0].isPrimary, true);
+});
+
+test('pedir una PK nueva sobre una tabla que ya existe no es seguro', () => {
+  const actual = [
+    { table: 'notas', rowsEstimated: 3, columns: [{ name: '_id', type: 'uuid', isPrimary: true }] },
+  ];
+  const plan = planSchema(actual, [
+    { table: 'notas', columns: [{ name: 'codigo', type: 'varchar(20)', primary: true }] },
+  ]);
+  assert.equal(plan.safe.length, 0);
+  assert.match(plan.unsafe[0].reason, /clave se fija al crear/);
+});

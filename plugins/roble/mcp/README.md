@@ -131,6 +131,43 @@ debe sentirse deshacer una decisión.
 Guarda la forma y no los datos —ni filas ni tamaños— para que el diff de git
 no sea ruido.
 
+## La clave primaria y `_id`
+
+Roble añade `_id uuid` a toda tabla, y **no se declara**: el plan la ignora al
+comparar y al crear, así que mandarla en el esquema deseado no rompe nada.
+
+Quién es la clave lo decide lo que declares:
+
+| Lo que pides | Lo que queda |
+|---|---|
+| Ninguna columna con `primary: true` | `_id` es la clave primaria |
+| Alguna con `primary: true` | Esa es la clave; `_id` sigue existiendo, `NOT NULL` |
+
+Ese reparto lo hace el servidor, no el MCP. Solo se puede declarar **al crear
+la tabla**: pedir una clave nueva sobre una que ya existe reescribe la tabla
+entera, así que el plan lo propone y no lo aplica.
+
+## Claves foráneas: no existen
+
+`create-table` no acepta `references`, así que `curso_id` apuntando a
+`cursos._id` es pura convención de nombres. Nada impide guardar ahí un id que
+no existe.
+
+El MCP no puede crear una restricción que la plataforma no ofrece, pero sí
+avisa cuando los tipos no van a cruzar:
+
+```
+Avisos, no bloquean nada:
+  ~ "notas.curso_id" parece apuntar a "cursos._id", que es uuid, pero se
+    declara text. Roble no tiene claves foráneas, así que nadie lo va a
+    impedir: simplemente no van a cruzar al consultar.
+```
+
+Adivina la tabla destino del nombre (`curso_id` → `curso` o `cursos`, con el
+plural español). Si no encuentra exactamente una, calla: afirmar algo sería
+inventar. Es un aviso, nunca un bloqueo — la convención es del proyecto, no de
+la plataforma.
+
 ## Tablas que el MCP no toca
 
 `user_system` y `saved_queries` son de Roble, no del proyecto: su forma la

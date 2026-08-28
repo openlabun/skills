@@ -41,6 +41,30 @@ export function normalizeType(type) {
 const RESERVED = new Set(['_id']);
 
 /**
+ * Candidatos de tabla para una columna `<algo>_id`.
+ *
+ * Roble no tiene claves foráneas —`create-table` no acepta `references`—, así
+ * que la relación es pura convención de nombres. Esto la adivina para poder
+ * avisar de un tipo que no cuadra; nunca para bloquear nada.
+ */
+function fkCandidates(column) {
+  const m = /^(.+?)_id$/.exec(column);
+  if (!m) return [];
+
+  const base = m[1];
+  const out = new Set([base]);
+  if (/[aeiou]$/.test(base)) out.add(`${base}s`);
+  else if (/z$/.test(base)) out.add(`${base.slice(0, -1)}ces`);
+  else out.add(`${base}es`);
+  return [...out];
+}
+
+/** El tipo del `_id` de una tabla, o `null` si no se conoce. */
+function idType(table) {
+  return table?.columns?.find((c) => c.name === '_id')?.type ?? null;
+}
+
+/**
  * Tablas que son de Roble, no del proyecto.
  *
  * `saved_queries` guarda las consultas guardadas de la consola, que la esconde
@@ -139,6 +163,12 @@ export function planSchema(actual, desired, memory = SIN_MEMORIA) {
           // Es el mismo criterio que en `add_column`, donde la obligatoriedad
           // solo es segura si la tabla está vacía.
           nullable: c.nullable !== false,
+          // Sin ninguna marcada, el servidor hace `_id` la clave primaria. Con
+          // alguna, `_id` sigue existiendo como UNIQUE NOT NULL y la clave es
+          // la declarada. Ese reparto lo decide el servidor; aquí solo se le
+          // pasa la intención en vez de mandar siempre `false`, que dejaba la
+          // opción inalcanzable desde el MCP.
+          primary: c.primary === true,
         })),
       });
       continue;
@@ -166,6 +196,17 @@ export function planSchema(actual, desired, memory = SIN_MEMORIA) {
               'luego hazla obligatoria.'
             : 'La columna no existe. Añadirla admitiendo nulos no toca las filas que ya están.';
 
+        // La clave primaria se fija al crear la tabla. Añadir una columna
+        // pidiéndola primaria sobre una tabla que ya tiene su `_id` de clave
+        // es cambiar la clave, no añadir una columna.
+        if (col.primary === true) {
+          safe = false;
+          reason =
+            `"${col.name}" se pide como clave primaria, y "${want.table}" ya existe. ` +
+            'La clave se fija al crear la tabla: cambiarla después reescribe la ' +
+            'tabla entera. Declárala al crearla, o hazlo desde la consola.';
+        }
+
         if (laBorraron) {
           safe = false;
           reason =
@@ -183,6 +224,19 @@ export function planSchema(actual, desired, memory = SIN_MEMORIA) {
           reason,
         });
         continue;
+      }
+
+      if (col.primary === true && !existing.isPrimary) {
+        steps.push({
+          action: 'change_primary_key',
+          table: want.table,
+          column: col.name,
+          safe: false,
+          reason:
+            `"${want.table}.${col.name}" se pide como clave primaria y no lo es. ` +
+            'Cambiar la clave de una tabla con datos es una migración, no un ' +
+            'ajuste: se hace a mano y sabiendo lo que hay dentro.',
+        });
       }
 
       if (normalizeType(existing.type) !== normalizeType(col.type)) {
@@ -226,7 +280,53 @@ export function planSchema(actual, desired, memory = SIN_MEMORIA) {
     steps,
     safe: steps.filter((s) => s.safe),
     unsafe: steps.filter((s) => !s.safe),
+    warnings: fkWarnings(actual, desired),
   };
+}
+
+/**
+ * Columnas `<algo>_id` cuyo tipo no cuadra con el `_id` de la tabla a la que
+ * su nombre apunta.
+ *
+ * Es un aviso y no un paso: la convención de nombres es del proyecto, no de la
+ * plataforma, y acertar al adivinar la tabla no está garantizado. Solo se avisa
+ * cuando la tabla existe y el tipo difiere, que es cuando la comparación va a
+ * fallar de verdad al consultar.
+ */
+export function fkWarnings(actual, desired) {
+  const conocidas = new Map(actual.map((t) => [t.table, t]));
+  // Las que el propio plan va a crear cuentan: su `_id` será uuid.
+  for (const d of desired) if (!conocidas.has(d.table)) conocidas.set(d.table, null);
+
+  const out = [];
+  for (const want of desired) {
+    if (isInternalTable(want.table)) continue;
+
+    for (const col of want.columns ?? []) {
+      const destinos = fkCandidates(col.name).filter((n) => conocidas.has(n) && n !== want.table);
+      // Sin destino, o con más de uno, no hay nada que afirmar sin inventar.
+      if (destinos.length !== 1) continue;
+
+      const destino = destinos[0];
+      // Una tabla que el plan aún no ha creado tendrá `_id uuid`.
+      const tipoDestino = idType(conocidas.get(destino)) ?? 'uuid';
+      if (normalizeType(col.type) === normalizeType(tipoDestino)) continue;
+
+      out.push({
+        table: want.table,
+        column: col.name,
+        references: destino,
+        expected: normalizeType(tipoDestino),
+        found: normalizeType(col.type),
+        message:
+          `"${want.table}.${col.name}" parece apuntar a "${destino}._id", que es ` +
+          `${normalizeType(tipoDestino)}, pero se declara ${normalizeType(col.type)}. ` +
+          'Roble no tiene claves foráneas, así que nadie lo va a impedir: ' +
+          'simplemente no van a cruzar al consultar.',
+      });
+    }
+  }
+  return out;
 }
 
 /** Aplica únicamente los pasos seguros. Los demás se devuelven sin tocar. */
@@ -244,7 +344,7 @@ export async function applyPlan(client, plan) {
             name: c.name,
             type: c.type,
             isNullable: c.nullable,
-            isPrimary: false,
+            isPrimary: c.primary === true,
           })),
         });
       } else if (step.action === 'add_column') {

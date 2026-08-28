@@ -33,6 +33,13 @@ const DESIRED_SCHEMA = {
                   type: 'boolean',
                   description: 'Por omisión true. No declares "_id": Roble la añade sola.',
                 },
+                primary: {
+                  type: 'boolean',
+                  description:
+                    'Clave primaria. Por omisión false, y entonces Roble usa "_id". ' +
+                    'Si marcas alguna, "_id" se sigue creando pero como UNIQUE NOT NULL ' +
+                    'en vez de clave. Solo se puede declarar al crear la tabla.',
+                },
               },
               required: ['name', 'type'],
             },
@@ -89,12 +96,24 @@ function avisoDeSeguridad(cfg) {
 }
 
 function describePlan(plan) {
-  if (plan.steps.length === 0) return 'El esquema ya coincide con lo que la app necesita.';
+  // Los avisos se dan aunque no haya nada que hacer: un tipo que no cruza es
+  // exactamente el caso en que el esquema «ya coincide» y aun así está mal.
+  const avisos = plan.warnings?.length
+    ? 'Avisos, no bloquean nada:\n' + plan.warnings.map((w) => `  ~ ${w.message}`).join('\n')
+    : '';
+
+  if (plan.steps.length === 0) {
+    const ok = 'El esquema ya coincide con lo que la app necesita.';
+    return avisos ? `${ok}\n\n${avisos}` : ok;
+  }
 
   const line = (s) => {
     if (s.action === 'create_table') {
-      const cols = s.columns.map((c) => `${c.name} ${c.type}`).join(', ');
-      return `CREAR TABLA ${s.table} (${cols})`;
+      const cols = s.columns
+        .map((c) => `${c.name} ${c.type}${c.primary ? ' PK' : ''}`)
+        .join(', ');
+      const clave = s.columns.some((c) => c.primary) ? '' : ', clave: _id';
+      return `CREAR TABLA ${s.table} (${cols})${clave}`;
     }
     if (s.action === 'add_column') {
       return `AÑADIR ${s.table}.${s.column.name} ${s.column.type}${s.column.nullable ? '' : ' NOT NULL'}`;
@@ -103,10 +122,12 @@ function describePlan(plan) {
       return `CAMBIAR TIPO ${s.table}.${s.column}: ${s.from} → ${s.to}`;
     }
     if (s.action === 'skip_table') return `OMITIDA ${s.table}`;
+    if (s.action === 'change_primary_key') return `CAMBIAR CLAVE ${s.table}.${s.column}`;
     return `QUITAR COLUMNA ${s.table}.${s.column}`;
   };
 
   const parts = [];
+  if (avisos) parts.push(avisos);
   if (plan.safe.length) {
     parts.push(
       'Se aplican solos:\n' + plan.safe.map((s) => `  + ${line(s)}\n    ${s.reason}`).join('\n'),
