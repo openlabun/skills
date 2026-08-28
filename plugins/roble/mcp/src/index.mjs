@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+import { serve } from './rpc.mjs';
+import { RobleAdminClient } from './client.mjs';
+import { applyPlan, planSchema, readSchema } from './schema.mjs';
+
+const DESIRED_SCHEMA = {
+  type: 'object',
+  properties: {
+    tables: {
+      type: 'array',
+      description: 'El esquema que la app necesita.',
+      items: {
+        type: 'object',
+        properties: {
+          table: { type: 'string' },
+          columns: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                type: {
+                  type: 'string',
+                  description:
+                    'Tipo de Postgres. Roble acepta: text, int, bigint, smallint, ' +
+                    'numeric, real, double precision, date, timestamp, ' +
+                    'timestamp with time zone, time, json, jsonb, boolean, uuid, ' +
+                    'serial, varchar(n).',
+                },
+                nullable: {
+                  type: 'boolean',
+                  description: 'Por omisión true. No declares "_id": Roble la añade sola.',
+                },
+              },
+              required: ['name', 'type'],
+            },
+          },
+        },
+        required: ['table', 'columns'],
+      },
+    },
+  },
+  required: ['tables'],
+};
+
+const TOOLS = [
+  {
+    name: 'roble_schema_read',
+    description:
+      'Lee el esquema del proyecto: tablas, columnas, tipos y filas estimadas. ' +
+      'Empieza siempre por aquí, antes de proponer cambios.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'roble_schema_plan',
+    description:
+      'Compara el esquema del proyecto con el que la app necesita y devuelve los ' +
+      'pasos, separando los que se pueden aplicar solos de los que perderían datos. ' +
+      'No modifica nada.',
+    inputSchema: DESIRED_SCHEMA,
+  },
+  {
+    name: 'roble_schema_apply',
+    description:
+      'Aplica los pasos aditivos del plan: crear tablas y añadir columnas opcionales. ' +
+      'Nunca borra ni cambia tipos: eso lo informa para que lo decida una persona. ' +
+      'Requiere un token con alcance de lectura y escritura.',
+    inputSchema: DESIRED_SCHEMA,
+  },
+];
+
+function config() {
+  return {
+    baseUrl: process.env.ROBLE_BASE_URL,
+    contractId: process.env.ROBLE_CONTRACT_ID,
+    token: process.env.ROBLE_TOKEN,
+  };
+}
+
+function describePlan(plan) {
+  if (plan.steps.length === 0) return 'El esquema ya coincide con lo que la app necesita.';
+
+  const line = (s) => {
+    if (s.action === 'create_table') {
+      const cols = s.columns.map((c) => `${c.name} ${c.type}`).join(', ');
+      return `CREAR TABLA ${s.table} (${cols})`;
+    }
+    if (s.action === 'add_column') {
+      return `AÑADIR ${s.table}.${s.column.name} ${s.column.type}${s.column.nullable ? '' : ' NOT NULL'}`;
+    }
+    if (s.action === 'change_column_type') {
+      return `CAMBIAR TIPO ${s.table}.${s.column}: ${s.from} → ${s.to}`;
+    }
+    return `QUITAR COLUMNA ${s.table}.${s.column}`;
+  };
+
+  const parts = [];
+  if (plan.safe.length) {
+    parts.push(
+      'Se aplican solos:\n' + plan.safe.map((s) => `  + ${line(s)}\n    ${s.reason}`).join('\n'),
+    );
+  }
+  if (plan.unsafe.length) {
+    parts.push(
+      'Requieren decisión humana, no se aplican:\n' +
+        plan.unsafe.map((s) => `  ! ${line(s)}\n    ${s.reason}`).join('\n'),
+    );
+  }
+  return parts.join('\n\n');
+}
+
+async function callTool(name, args) {
+  // El cliente se construye por llamada, y no al arrancar, para que un token
+  // mal puesto salga como un error legible en la herramienta y no como un
+  // proceso que muere antes de que el editor llegue a hablar con él.
+  const client = new RobleAdminClient(config());
+
+  if (name === 'roble_schema_read') {
+    const schema = await readSchema(client);
+    return { content: [{ type: 'text', text: JSON.stringify(schema, null, 2) }] };
+  }
+
+  if (name === 'roble_schema_plan' || name === 'roble_schema_apply') {
+    const actual = await readSchema(client);
+    const plan = planSchema(actual, args?.tables ?? []);
+
+    if (name === 'roble_schema_plan') {
+      return { content: [{ type: 'text', text: describePlan(plan) }] };
+    }
+
+    const result = await applyPlan(client, plan);
+    const parts = [];
+
+    if (result.applied.length) {
+      parts.push(
+        `Aplicados ${result.applied.length}:\n` +
+          result.applied.map((s) => `  + ${s.action} ${s.table}`).join('\n'),
+      );
+    } else if (plan.safe.length === 0) {
+      // Distinto de "todo lo aditivo falló", que es lo que pasa con un token de
+      // solo lectura y merece un mensaje que no diga lo contrario.
+      parts.push('No había nada aditivo que aplicar.');
+    }
+
+    if (result.failed.length) {
+      parts.push(
+        'Fallaron:\n' +
+          result.failed.map((f) => `  x ${f.step.action} ${f.step.table}: ${f.error}`).join('\n'),
+      );
+    }
+    if (result.skipped.length) {
+      parts.push(
+        'Sin aplicar, requieren decisión humana:\n' +
+          result.skipped.map((s) => `  ! ${s.reason}`).join('\n'),
+      );
+    }
+    return { content: [{ type: 'text', text: parts.join('\n\n') }] };
+  }
+
+  throw new Error(`Herramienta desconocida: ${name}`);
+}
+
+serve({ name: 'roble-mcp', version: '0.1.0', tools: TOOLS, callTool });
