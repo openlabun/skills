@@ -4,6 +4,7 @@ import { RobleAdminClient } from './client.mjs';
 import { applyPlan, planSchema, readSchema } from './schema.mjs';
 import { indexSnapshot, readSnapshot, snapshotPath, writeSnapshot } from './snapshot.mjs';
 import { callHint, createQuery, listQueries } from './queries.mjs';
+import { describeStatus, readStorageStatus } from './storage.mjs';
 import { mcpVersion, packageRoot, pluginVersion } from './version.mjs';
 import { ENV_FILE, isGitIgnored, loadConfig, writeTokenInstructions } from './env.mjs';
 
@@ -125,6 +126,20 @@ const TOOLS = [
       },
       required: ['name', 'query'],
     },
+  },
+  {
+    name: 'roble_storage_status',
+    description:
+      'Si el proyecto tiene un bucket conectado para guardar archivos, y cómo ' +
+      'se usan desde la app. ' +
+      'CONSÚLTALO ANTES de escribir cualquier código que suba o descargue ' +
+      'archivos: Roble no los guarda —los guarda un bucket compatible con S3 ' +
+      'que alguien tiene que conectar en la consola—, y si nadie lo hizo, todas ' +
+      'las llamadas fallan con un error que no dice que falte configurar el ' +
+      'proyecto. Es la causa número uno de que los archivos "no sirvan". ' +
+      'No configura nada ni devuelve credenciales: conectar el bucket exige la ' +
+      'clave secreta del proveedor y eso lo hace una persona en la consola.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'roble_schema_plan',
@@ -279,6 +294,11 @@ async function dispatch(name, args) {
         },
       ],
     };
+  }
+
+  if (name === 'roble_storage_status') {
+    const status = await readStorageStatus(client);
+    return { content: [{ type: 'text', text: conAviso(describeStatus(status)) }] };
   }
 
   if (name === 'roble_schema_read') {
