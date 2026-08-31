@@ -3,6 +3,24 @@
 El número lo llevan el plugin y su servidor MCP en paralelo: `roble_version`
 dice los dos, y si no coinciden es que la instalación quedó a medias.
 
+## 1.1.0
+
+### Servidor MCP
+
+- **`roble_storage_status`**: si el proyecto tiene un bucket conectado. Sin él,
+  las funciones de archivos no están disponibles para la aplicación, así que es
+  lo primero que hay que mirar antes de escribir código que suba nada.
+
+### Skills
+
+- `use-roble` y `use-roble-client` cubren ahora los archivos: subida y descarga
+  con URLs firmadas contra el bucket del proyecto.
+
+### Requisitos
+
+El almacenamiento necesita `app-roble` v1.9.0 o superior y `db-service-roble`
+v1.8.0 o superior.
+
 ## 1.0.0
 
 Primera versión numerada. Lo anterior se distribuyó sin número, así que si
