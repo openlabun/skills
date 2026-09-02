@@ -1,6 +1,6 @@
 {
   "name": "roble-mcp",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Servidor MCP de Roble (Uninorte OpenLab): leer el esquema de un proyecto y ajustarlo a lo que la app necesita.",
   "type": "module",
   "bin": {

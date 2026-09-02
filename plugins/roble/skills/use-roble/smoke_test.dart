@@ -54,15 +54,25 @@ void main() {
       expect(user['email'], correo);
 
       final col = '_smoke_${DateTime.now().millisecondsSinceEpoch}';
-      final recibidos = <RobleChange>[];
-      final sub = db.json.watch(col).listen(recibidos.add);
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
 
+      // El primer push va antes de escuchar a propósito: el servidor rechaza
+      // suscribirse a una colección que todavía no existe, con
+      // REALTIME_UNKNOWN_COLLECTION, y una colección nace al escribir en ella.
+      // Al revés, el smoke se suscribía a algo inexistente y el «no llegó
+      // ningún cambio» parecía un fallo de tiempo real cuando era de orden.
       final id = await db.json.push(col, {'texto': 'hola'});
       print('  push -> $id');
       expect(await db.json.read(col), contains(id));
 
+      final recibidos = <RobleChange>[];
+      final errores = <Object>[];
+      final sub = db.json.watch(col).listen(recibidos.add, onError: errores.add);
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+
+      await db.json.push(col, {'texto': 'y este se espera por el socket'});
+
       await Future<void>.delayed(const Duration(milliseconds: 2500));
+      if (errores.isNotEmpty) print('  AVISO tiempo real: ${errores.first}');
       print(recibidos.isEmpty
           ? '  AVISO tiempo real: no llegó ningún cambio'
           : '  tiempo real: llegó el cambio');

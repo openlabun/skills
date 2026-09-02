@@ -30,15 +30,31 @@ try {
 
   console.log('árbol JSON');
   const col = `_smoke_${Date.now()}`;
-  const recibidos = [];
-  const parar = db.json.watch(col, (c) => recibidos.push(c));
-  await new Promise((r) => setTimeout(r, 1500));      // deja abrir el socket
 
+  // El primer push va antes de escuchar a propósito: el servidor rechaza
+  // suscribirse a una colección que todavía no existe, con
+  // REALTIME_UNKNOWN_COLLECTION, y una colección nace al escribir en ella. Al
+  // revés, el smoke se suscribía a algo inexistente y el «no llegó ningún
+  // cambio» parecía un fallo de tiempo real cuando era de orden.
   const id = await db.json.push(col, { texto: 'hola' });
   ok(`push -> ${id}`);
   ok(`read -> ${JSON.stringify(await db.json.read(col))}`);
 
+  const recibidos = [];
+  const errores = [];
+  // onError va dentro del objeto de opciones: pasarlo suelto como tercer
+  // argumento no lo registra, y un rechazo del servidor se pierde en silencio.
+  const parar = db.json.watch(col, (c) => recibidos.push(c), {
+    onError: (e) => errores.push(e),
+  });
+  await new Promise((r) => setTimeout(r, 1500));      // deja abrir el socket
+
+  await db.json.push(col, { texto: 'y este es el que se espera por el socket' });
+
   await new Promise((r) => setTimeout(r, 2500));      // deja llegar el evento
+  if (errores.length) {
+    console.log(`  AVISO tiempo real: ${errores[0]?.message ?? errores[0]}`);
+  }
   console.log(recibidos.length ? '  ok   tiempo real: llegó el cambio'
                                : '  AVISO tiempo real: no llegó ningún cambio');
   parar();

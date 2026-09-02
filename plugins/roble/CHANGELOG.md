@@ -3,6 +3,27 @@
 El número lo llevan el plugin y su servidor MCP en paralelo: `roble_version`
 dice los dos, y si no coinciden es que la instalación quedó a medias.
 
+## 1.2.1
+
+### Skills
+
+- **Los dos smokes comprobaban el tiempo real de una forma que no podía pasar.**
+  Se suscribían a una colección recién inventada y le escribían después, pero el
+  servidor rechaza suscribirse a una colección que todavía no existe
+  (`REALTIME_UNKNOWN_COLLECTION`, en `stream.gateway.ts`) y una colección nace
+  al escribir en ella. El resultado era un «AVISO tiempo real: no llegó ningún
+  cambio» que parecía un fallo del servidor y era de orden — justo el mensaje
+  que uno lee cuando está depurando un problema de tiempo real de verdad.
+
+  Ahora el primer push crea la colección, la suscripción va después, y el
+  cambio que se espera por el socket es un segundo push. Verificado contra
+  producción: los dos pasan.
+
+- El smoke de JS registra `onError` **dentro del objeto de opciones**, que es
+  donde `watch` lo busca. Suelto como tercer argumento no se registraba, así que
+  un rechazo del servidor se perdía en silencio y solo se veía la ausencia de
+  eventos.
+
 ## 1.2.0
 
 ### Skills
