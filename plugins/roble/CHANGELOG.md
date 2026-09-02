@@ -3,6 +3,35 @@
 El número lo llevan el plugin y su servidor MCP en paralelo: `roble_version`
 dice los dos, y si no coinciden es que la instalación quedó a medias.
 
+## 1.2.0
+
+### Skills
+
+- **`use-roble` y `use-roble-client` se ponen al día con los paquetes
+  publicados**: `roble 1.9.0` y `roble-client@3.8.0`. Documentaban 1.4.0 y
+  3.5.0, cuatro y tres versiones por detrás de lo que instala `pub add` o
+  `npm install`, así que quien seguía el skill leía instrucciones de una API
+  anterior a la que acababa de bajar.
+
+- **La sesión como un flujo**, que es el hueco grande que quedaba:
+  `authStateChanges` en Flutter, `onAuthStateChanged` en JS, y
+  `onSessionExpired` en ambos. Es la forma idiomática de decidir qué pantalla
+  pintar, y los skills seguían enseñando a resolverlo con un `restoreSession()`
+  y un `if`.
+
+  Con ello, `RobleAuthReason`: `signedOut` y `expired` dejan los dos sin
+  sesión, pero solo uno merece un «tu sesión caducó», y sin el motivo la app no
+  puede distinguirlos.
+
+- **El único cambio que puede obligar a tocar código** queda anotado en la guía
+  de migración de Flutter: en 1.9.0, `RobleAuthState.user` pasa de
+  `Map<String, dynamic>?` a `RobleUser?`. `currentUser()` no cambia.
+
+### Requisitos
+
+Nada nuevo del lado del servidor: son APIs de cliente sobre lo que el backend
+ya hacía.
+
 ## 1.1.0
 
 ### Servidor MCP

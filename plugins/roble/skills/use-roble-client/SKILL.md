@@ -25,7 +25,7 @@ gente se atasca (ver Gotchas).
 npm install roble-client
 ```
 
-Verificado con `roble-client@3.5.0` y Node v25.1.0.
+Verificado con `roble-client@3.8.0` y Node v25.1.0.
 
 ## Verificar que funciona: el smoke
 
@@ -83,6 +83,48 @@ Crearlo en cada componente da a cada copia su propia sesión.
 
 Lo demás —cuentas, tablas, árbol JSON, tiempo real, qué devuelve cada
 método— está en el README del paquete. No lo repitas aquí.
+
+## La sesión, como un flujo
+
+`db.onAuthStateChanged(cb)` llama al escuchador **ya, con el estado actual**, y
+luego en cada cambio: al entrar, al recuperar una sesión guardada, al salir y
+cuando se cae sola. Devuelve la función para dejar de escuchar:
+
+```js
+const dejarDeEscuchar = db.onAuthStateChanged((estado) => {
+  setUsuario(estado.isSignedIn ? estado.user : null);
+});
+```
+
+En React eso es un `useEffect` que devuelve `dejarDeEscuchar` y ya está: no
+hace falta pedir el perfil al montar, porque el primer aviso llega solo.
+
+`db.authState` da el estado de ahora mismo sin suscribirse.
+
+Cada estado dice **por qué** cambió, en `reason`, y eso es lo que un
+`user | null` a secas no cuenta:
+
+| `RobleAuthReason` | Cuándo | Qué merece la persona |
+|---|---|---|
+| `'signedIn'` | acaba de entrar | pasar a la app |
+| `'restored'` | se recuperó una sesión guardada | pasar a la app, sin saludar como si acabara de entrar |
+| `'signedOut'` | cerró sesión a propósito | volver al login, callando |
+| `'expired'` | se cayó sola | volver al login **y decir que caducó** |
+
+`'signedOut'` y `'expired'` dejan los dos sin sesión, pero solo uno merece un
+«tu sesión caducó». Esa distinción es toda la razón de que `reason` exista.
+
+Si solo interesa la caída, `db.onSessionExpired(cb)` es un filtro de lo
+anterior:
+
+```js
+const dejarDeEscuchar = db.onSessionExpired(() => navigate('/login'));
+```
+
+Avisa una sola vez por sesión caída aunque fallen varias llamadas a la vez, se
+rearma al entrar de nuevo, y **no** avisa en `logout()`. A diferencia de
+`onAuthStateChanged`, no reparte el estado actual al suscribirse — avisa de lo
+que pase a partir de ahora.
 
 ## Cómo organizar el proyecto
 
@@ -193,6 +235,20 @@ que solo aparecen al recargar.
   quien no actualice tendrá `watchTable` fallando igual, pero sin el aviso.
   Desde 3.5.0, un fallo de tiempo real sin `onError` sale por `console.warn`
   en vez de perderse.
+- **3.6.0 trajo `db.files`.** Requiere `app-roble` v1.9.1 o superior y
+  `db-service-roble` v1.8.0 o superior.
+- **3.7.0 trajo `db.onSessionExpired(cb)`.** Antes, una sesión caída solo se
+  deducía cazando `RobleApiAuthException` en el sitio correcto.
+- **3.8.0 trajo `db.onAuthStateChanged(cb)` y `db.authState`.**
+  `onSessionExpired` pasa a ser un filtro de ese flujo, con el mismo
+  comportamiento de 3.7.0.
+
+  `restoreSession()` ahora pide el perfil al comprobar que la sesión sigue
+  viva, para poder emitirlo con el estado: una app que lo pedía por su cuenta
+  al arrancar puede dejar de hacerlo. Borrar la cuenta emite `'signedOut'`,
+  que antes se quedaba sin avisar.
+
+  Es aditivo: nada de lo que ya funcionaba deja de hacerlo.
 
 Después de subir de versión, corre el smoke antes de tocar la app.
 
@@ -238,6 +294,20 @@ Después de subir de versión, corre el smoke antes de tocar la app.
 - **`role` es `null` si nadie asignó rol.** No es un error, y no significa
   que el backend esté viejo.
 
+- **`authState.user` puede ser `null` con sesión iniciada.**
+  `restoreSession({ verify: false })` carga los tokens sin llamar al servidor,
+  así que no hay perfil que emitir. Para saber si hay sesión mira `isSignedIn`,
+  no `user`.
+
+- **`onAuthStateChanged` reparte el estado actual al suscribirse;
+  `onSessionExpired` no.** El primero sirve para pintar desde cero; el segundo
+  avisa de lo que pase a partir de ahora, así que suscribirse tarde no
+  recupera una caída ya ocurrida.
+
+- **Los dos devuelven la función para desuscribirse.** En React, devuélvela
+  desde el `useEffect`: sin eso, cada montaje deja un escuchador vivo y el
+  estado se actualiza varias veces por cambio.
+
 - **`id` y `userId` no son lo mismo** en el perfil. `userId` es el del
   usuario, el que referencian tus tablas; `id` es el de la fila del perfil.
 
@@ -261,6 +331,6 @@ Después de subir de versión, corre el smoke antes de tocar la app.
 | `restoreSession()` siempre `false` en Node | el `localStorage` de Node no guarda | pasa `storage` explícito |
 | El smoke falla en «proveedores» | `contractId` o `baseUrl` mal | cópialos de la consola de Roble |
 | `AVISO tiempo real: no llegó ningún cambio` | el socket no llegó a suscribirse | sube la espera antes del `push` |
-| 401 en todo tras un rato | sesión caducada | `restoreSession()`; si da `false`, vuelve a pedir login |
+| 401 en todo tras un rato | sesión caducada | escucha `db.onSessionExpired` y lleva al login; detectarlo por el 401 en cada pantalla llega tarde |
 | 403 en `publicRead` | la tabla no está marcada como pública | márcala en la consola |
 | 404 en `executeQueryByName` | no existe esa consulta guardada | créala en la consola, por nombre |

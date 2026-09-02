@@ -1,6 +1,6 @@
 {
   "name": "roble",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Integrar los clientes de Roble (Flutter y JavaScript) en un proyecto, desde cero o migrando, con un smoke que verifica la conexión contra el servidor real. Incluye un servidor MCP para leer el esquema de un proyecto y ajustarlo a lo que la app necesita.",
   "author": {
     "name": "Uninorte OpenLab"

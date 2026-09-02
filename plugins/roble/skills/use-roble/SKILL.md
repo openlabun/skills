@@ -23,7 +23,7 @@ no lo tiene**, o para migrar una que ya habla con Roble a mano.
 flutter pub add roble
 ```
 
-Verificado con `roble 1.4.0` y Flutter 3.47.0.
+Verificado con `roble 1.9.0` y Flutter 3.47.0.
 
 En Android, `android/app/src/main/AndroidManifest.xml` necesita, dentro de
 `<manifest>`:
@@ -95,6 +95,9 @@ if (await db.restoreSession()) {
 }
 ```
 
+Eso sirve para decidir una vez. Para que la app **siga** la sesión —y se entere
+de que se cayó— usa `authStateChanges`, más abajo.
+
 Lo demás —cuentas, tablas, árbol JSON, tiempo real, qué devuelve cada
 método— está en el README del paquete. No lo repitas aquí.
 
@@ -112,6 +115,53 @@ Hace falta, además:
   retorno» de la app.
 - Pasar `ssoRedirect` con el nombre de ese destino.
 - En iOS, `googleIosClientId`. El Client ID **web** no: ese lo trae Roble.
+
+## La sesión, como un flujo
+
+`db.authStateChanges` emite al entrar, al recuperar una sesión guardada, al
+salir y cuando se cae sola. Quien se suscribe **recibe primero el estado
+actual**, así que una pantalla puede pintarse desde aquí sin preguntar nada
+aparte:
+
+```dart
+StreamBuilder<RobleAuthState>(
+  stream: db.authStateChanges,
+  builder: (_, snap) =>
+      snap.data?.isSignedIn ?? false ? const Inicio() : const Login(),
+);
+```
+
+`db.authState` da el estado de ahora mismo sin esperar al siguiente cambio.
+
+Cada estado dice **por qué** cambió, en `reason`, y eso es lo que un `user`
+a secas no cuenta:
+
+| `RobleAuthReason` | Cuándo | Qué merece la persona |
+|---|---|---|
+| `signedIn` | acaba de entrar | pasar a la app |
+| `restored` | se recuperó una sesión guardada | pasar a la app, sin saludar como si acabara de entrar |
+| `signedOut` | cerró sesión a propósito | volver al login, callando |
+| `expired` | se cayó sola | volver al login **y decir que caducó** |
+
+`signedOut` y `expired` dejan los dos sin sesión, pero solo uno merece un «tu
+sesión caducó». Esa distinción es toda la razón de que `reason` exista.
+
+Si solo interesa la caída, `db.onSessionExpired` es un filtro de lo anterior:
+
+```dart
+db.onSessionExpired.listen((_) => irALogin());
+```
+
+Emite una sola vez por sesión caída aunque fallen varias llamadas a la vez, se
+rearma al entrar de nuevo, y **no** emite en `logout()`: cerrar sesión a
+propósito no es que se te caiga. A diferencia de `authStateChanges`, no reparte
+el estado actual al suscribirse — avisa de lo que pase a partir de ahora.
+
+El perfil llega ya convertido, como `RobleUser`: `userId`, `email`, `name`,
+`role`, `extra` y las fechas como `DateTime`. Lo que el paquete todavía no
+conozca sigue estando en `raw`, así que un campo nuevo del backend no obliga a
+esperar una versión del paquete. `currentUser()` sigue devolviendo el `Map`
+tal cual.
 
 ## Cómo organizar el proyecto
 
@@ -201,21 +251,41 @@ por su cuenta; dos capas compitiendo producen refrescos duplicados.
 **Deja de guardar los tokens tú.** El paquete los persiste en el almacenamiento
 seguro y los recupera con `restoreSession()`.
 
-## Migrar de 1.3.0 a 1.4.0
+## Migrar desde una versión anterior del paquete
 
-**Es aditivo: no desaparece ningún método ni cambia lo que devuelve ninguno.**
-Actualizar no debería obligar a tocar nada.
+Casi todo es aditivo. El único cambio de tipo está en 1.9.0 y solo afecta a
+quien ya usaba `authStateChanges`.
 
-Lo que gana: `signInWithGoogle()` y el resto del login social v2, `db.json`
-(árbol JSON), `executeQueryByName`, y `role` en el perfil.
+- **1.4.0 trajo** `signInWithGoogle()` y el resto del login social v2, `db.json`
+  (árbol JSON), `executeQueryByName`, y `role` en el perfil. `role` necesita
+  `auth-service` v1.7.8 o más; contra uno anterior llega `null`.
+- **1.5.0: el tiempo real escucha colecciones del árbol JSON, no tablas SQL.**
+  `watchTable` y `watchRecord` quedan obsoletos: el servidor rechaza esas
+  suscripciones con `REALTIME_UNKNOWN_COLLECTION` y ya no entregan nada. Usa
+  `db.json.watch` sobre la colección. Requiere `realtime` v0.10.1.
 
-`role` necesita `auth-service` v1.7.8 o más; contra uno anterior llega `null`.
+  El cambio es del servidor, así que **quedarse en 1.4.0 no lo evita**: quien no
+  actualice tendrá `watchTable` fallando igual, pero sin el aviso del
+  analizador.
+- **1.6.0 trajo `db.files`.** Requiere `app-roble` v1.9.1 o superior y
+  `db-service-roble` v1.8.0 o superior.
+- **1.7.0 trajo `db.onSessionExpired`.** Antes, una sesión caída solo se
+  deducía cazando `RobleApiAuthException` en el sitio correcto.
+- **1.8.0 trajo `db.authStateChanges` y `db.authState`.** `onSessionExpired`
+  pasa a ser un filtro de ese flujo, con el mismo comportamiento de 1.7.0.
 
-> **No uses `watchTable` ni `watchRecord`.** Siguen en el paquete, pero el
-> servidor ya no replica tablas SQL: rechaza esas suscripciones con
-> `REALTIME_UNKNOWN_COLLECTION` y no entregan nada. Para tiempo real, `db.json`
-> sobre una colección del árbol. Es un cambio del servidor, así que quedarse en
-> una versión vieja del paquete no lo evita.
+  `restoreSession()` ahora pide el perfil al comprobar que la sesión sigue
+  viva, para poder emitirlo con el estado: una app que lo pedía por su cuenta
+  al arrancar puede dejar de hacerlo.
+- **1.9.0 trajo `RobleUser`**, el perfil con tipos, y con él **el único cambio
+  que puede obligar a tocar código**: `RobleAuthState.user` pasa de
+  `Map<String, dynamic>?` a `RobleUser?`. Quien leía `estado.user!['email']`
+  pasa a `estado.user!.email`.
+
+  `currentUser()` **no** cambia: sigue devolviendo el `Map` tal cual, así que
+  nada de lo que ya funcionaba deja de hacerlo.
+
+Después de subir de versión, corre el smoke antes de tocar la app.
 
 ## Gotchas
 
@@ -231,6 +301,16 @@ Lo que gana: `signInWithGoogle()` y el resto del login social v2, `db.json`
 
 - **Cancela la suscripción al salir de la pantalla.** Un
   `StreamSubscription` sin `cancel()` deja el socket abierto.
+
+- **`authState.user` puede ser `null` con sesión iniciada.**
+  `restoreSession(verify: false)` carga los tokens sin llamar al servidor, así
+  que no hay perfil que emitir. Para saber si hay sesión mira `isSignedIn`, no
+  `user`: leer `user!` ahí revienta en el arranque y solo en ese camino.
+
+- **`authStateChanges` reparte el estado actual al suscribirse;
+  `onSessionExpired` no.** El primero sirve para pintar una pantalla desde
+  cero; el segundo es un aviso de lo que pase a partir de ahora, así que
+  suscribirse tarde no recupera una caída ya ocurrida.
 
 - **Escuchar exige sesión iniciada.**
 
@@ -269,7 +349,7 @@ Lo que gana: `signInWithGoogle()` y el resto del login social v2, `db.json`
 | El smoke falla en «proveedores» | `contractId` o `baseUrl` mal | cópialos de la consola de Roble |
 | `AVISO tiempo real: no llegó ningún cambio` | el socket no llegó a suscribirse | sube la espera antes del `push` |
 | «not found» al reentrar a una pantalla | `lazyPut` sin `fenix` | `fenix: true` en toda la cadena |
-| 401 en todo tras un rato | sesión caducada | `restoreSession()`; si da `false`, pide login |
+| 401 en todo tras un rato | sesión caducada | escucha `db.onSessionExpired` y lleva al login; detectarlo por el 401 en cada pantalla llega tarde |
 | 403 en `publicRead` | la tabla no está marcada como pública | márcala en la consola |
 | 404 en `executeQueryByName` | no existe esa consulta guardada | créala en la consola, por nombre |
 | `state inválido o expirado` en login social | el destino de retorno no coincide | registra la URL exacta en la consola y pásala en `ssoRedirect` |
